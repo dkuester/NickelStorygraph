@@ -325,6 +325,26 @@ static bool nickelMenuDetected = false;
 typedef void (*NmMenuHook2)(QWidget *, QWidget *);
 static NmMenuHook2 nmMenuHook2 = nullptr;
 
+// --- NickelHardcover coexistence ---
+//
+// Same problem as NickelMenu above, but for NickelHardcover: this project was
+// forked from it and still hooks the exact same ReadingController::setVolume
+// and ReadingMenuView constructor symbols. libstorygraph.so loads after
+// libhardcover.so alphabetically, so ours are the hooks libnickel calls and
+// NickelHardcover's progress sync and reading menu button silently never run.
+// When it's loaded, we call its hooks in place of the true originals (they
+// call through to the true originals themselves), the same way we call
+// nmMenuHook2 above.
+//
+// SupportedLocales is deliberately not chained: both mods' hooks insert the
+// same "English (UK)" entry, so calling both would list it twice.
+typedef void (*HcSetVolume)(ReadingController *, Volume *, Bookmark *);
+// Qt 6 (firmware 5.18+) has a single ReadingMenuView(QWidget*, bool, bool)
+// constructor; the Qt 5 build's second QByteArray overload does not exist.
+typedef void (*HcReadingMenuViewConstructor)(ReadingMenuView *, QWidget *, bool, bool);
+static HcSetVolume hcSetVolume = nullptr;
+static HcReadingMenuViewConstructor hcReadingMenuViewConstructor = nullptr;
+
 // The home screen tab bar button, cached so toggling "Show StoryGraph button
 // on home screen" in Settings can show/hide it immediately rather than
 // requiring Nickel to restart and reconstruct MainNavView.
@@ -551,6 +571,16 @@ int nickelstoregraph_init() {
   nickelMenuDetected = nmMenuHook2 != nullptr;
   nh_log("nickelstoregraph_init: nickelMenuDetected=%s", nickelMenuDetected ? "true" : "false");
 
+  void *hcHandle = dlopen("/usr/local/Kobo/imageformats/libhardcover.so", RTLD_NOLOAD | RTLD_LAZY);
+  if (hcHandle) {
+    hcSetVolume = reinterpret_cast<HcSetVolume>(dlsym(hcHandle, "_nh_ReadingController__setVolume"));
+    hcReadingMenuViewConstructor =
+        reinterpret_cast<HcReadingMenuViewConstructor>(dlsym(hcHandle, "_nh_ReadingMenuView__constructor"));
+    dlclose(hcHandle);
+  }
+  nh_log("nickelstoregraph_init: hcSetVolume=%p hcReadingMenuViewConstructor=%p", (void *)hcSetVolume,
+         (void *)hcReadingMenuViewConstructor);
+
   return 0;
 }
 
@@ -588,8 +618,15 @@ _nh_ReadingController__setVolume(ReadingController *_this, Volume *volume, Bookm
     }
   }
 
-  nh_log("ReadingController::setVolume calling original");
-  ReadingController__setVolume(_this, volume, bookmark);
+  if (hcSetVolume) {
+    // NickelHardcover's hook calls through to the true original itself - see
+    // the NickelHardcover coexistence comment above.
+    nh_log("ReadingController::setVolume calling NickelHardcover's hook");
+    hcSetVolume(_this, volume, bookmark);
+  } else {
+    nh_log("ReadingController::setVolume calling original");
+    ReadingController__setVolume(_this, volume, bookmark);
+  }
   nh_log("ReadingController::setVolume original returned");
 }
 
@@ -616,7 +653,10 @@ extern "C" __attribute__((visibility("default"))) void
 _nh_ReadingMenuView__constructor(ReadingMenuView *_this, QWidget *parent, bool unknown, bool unknown2) {
   nh_log("ReadingMenuView::ReadingMenuView(%p, %p, %s, %s)", _this, parent, unknown ? "true" : "false",
          unknown2 ? "true" : "false");
-  ReadingMenuView__constructor(_this, parent, unknown, unknown2);
+  if (hcReadingMenuViewConstructor)
+    hcReadingMenuViewConstructor(_this, parent, unknown, unknown2);
+  else
+    ReadingMenuView__constructor(_this, parent, unknown, unknown2);
   nh_log("ReadingMenuView::ReadingMenuView original returned, injecting");
   injectMenuWidget(parent);
   nh_log("ReadingMenuView::ReadingMenuView inject done");
