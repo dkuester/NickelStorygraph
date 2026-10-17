@@ -1620,6 +1620,12 @@ pub struct LoginResult {
 /// Logs in with email + password and returns the session cookies StoryGraph
 /// issued. Uses a fresh cookie jar (not the config-seeded singleton), mirrors
 /// the browser's sign-in form POST, and reads the cookies back from the jar.
+///
+/// NOTE: as of late 2026 `/users/sign_in` sits behind a Cloudflare bot
+/// challenge (HTTP 403 "Just a moment...") for non-browser clients, so this
+/// currently fails with "Could not find CSRF token" unless the challenge is
+/// lifted or a valid `cf_clearance` cookie is already present in the jar
+/// (e.g. pre-seeded from a browser session).
 pub fn login(email: &str, password: &str) -> Result<LoginResult> {
   let base: Url = BASE_URL.parse().expect("BASE_URL is valid");
   let jar = Arc::new(Jar::default());
