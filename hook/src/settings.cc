@@ -9,6 +9,7 @@
 #include "cli.h"
 #include "settings.h"
 #include "synccontroller.h"
+#include "translations.h"
 
 Settings *Settings::instance = nullptr;
 
@@ -24,6 +25,7 @@ Settings::Settings(QObject *parent)
     : QObject(parent), internal(new QSettings(Files::settings, QSettings::IniFormat)),
       config(new QSettings(Files::config, QSettings::IniFormat)),
       kobo(new QSettings(Files::koboSettings, QSettings::IniFormat)) {
+  setLanguage(config->value("language").toString());
   QObject::connect(SyncController::getInstance(), &SyncController::currentViewChanged, this,
                    &Settings::currentViewChanged);
 };
@@ -106,6 +108,8 @@ QString Settings::getSyncBookmarks() { return config->value("sync_bookmarks", "n
 QString Settings::getSessionCookie() { return config->value("session_cookie").toString(); }
 
 QString Settings::getRememberToken() { return config->value("remember_user_token").toString(); }
+
+QString Settings::getLanguage() { return config->value("language").toString(); }
 
 void Settings::setCloseThreshold(int value) {
   QVariant realValue = "never";

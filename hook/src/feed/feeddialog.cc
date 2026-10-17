@@ -10,16 +10,17 @@
 #include "../widgets/label.h"
 #include "feeddialog.h"
 #include "feedrow.h"
+#include "../translations.h"
 
 void FeedDialog::show() { new FeedDialog(); }
 
 FeedDialog::FeedDialog() : HomePanel("") {
-  Label *heading = new Label(Label::ExtraLarge, "Community Feed", this);
+  Label *heading = new Label(Label::ExtraLarge, t("Community Feed"), this);
   heading->setAlignment(Qt::AlignCenter);
   heading->setStyleSheet(Label::Stylesheet + QStringLiteral("\n[textSize=\"ExtraLarge\"] { font-weight: bold; padding-top: 16px; padding-bottom: 12px; }"));
   contentLayout->addWidget(heading);
 
-  statusLabel = new QLabel("Loading...");
+  statusLabel = new QLabel(t("Loading..."));
   statusLabel->setAlignment(Qt::AlignCenter);
   contentLayout->addWidget(statusLabel, 1);
 
@@ -41,7 +42,7 @@ void FeedDialog::response(QJsonObject doc) {
 
 void FeedDialog::fillPages(const QJsonArray &items) {
   if (items.isEmpty()) {
-    pages->setStatusText("No activity in your feed.");
+    pages->setStatusText(t("No activity in your feed."));
     pages->setTotal(0);
     return;
   }
@@ -93,5 +94,5 @@ void FeedDialog::fillPages(const QJsonArray &items) {
 }
 
 void FeedDialog::failed() {
-  statusLabel->setText("Failed to load community feed.");
+  statusLabel->setText(t("Failed to load community feed."));
 }

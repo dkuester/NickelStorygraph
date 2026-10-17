@@ -10,6 +10,7 @@
 #include "../synccontroller.h"
 #include "../widgets/elidedlabel.h"
 #include "bookrow.h"
+#include "../translations.h"
 
 BookRow::BookRow(QJsonObject json, QWidget *parent) : QFrame(parent), id(json.value("id").toString()) {
   setStyleSheet(R"(
@@ -98,12 +99,12 @@ BookRow::BookRow(QJsonObject json, QWidget *parent) : QFrame(parent), id(json.va
 
   N3ButtonLabel *button = construct_N3ButtonLabel(this);
   button->setProperty("borderedButton", true);
-  button->setText("Select book");
+  button->setText(t("Select book"));
   buttons->addWidget(button);
   QObject::connect(button, SIGNAL(tapped(bool)), this, SLOT(selectTapped()));
 
   button = construct_N3ButtonLabel(this);
-  button->setText("Editions");
+  button->setText(t("Editions"));
   buttons->addWidget(button, 0, Qt::AlignLeft);
   QObject::connect(button, SIGNAL(tapped(bool)), this, SLOT(editionsTapped()));
 

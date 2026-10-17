@@ -4,6 +4,7 @@
 
 #include "../widgets/label.h"
 #include "streaksummary.h"
+#include "../translations.h"
 
 static QWidget *statTile(QString caption, QString value, QString color, QWidget *parent) {
   QWidget     *tile   = new QWidget(parent);
@@ -29,7 +30,7 @@ static QWidget *statTile(QString caption, QString value, QString color, QWidget 
 StreakSummary::StreakSummary(QJsonObject json, QWidget *parent) : QFrame(parent) {
   setStyleSheet(R"(
     /* padding: top right bottom left — top is trimmed down from the other
-       three since the "Streak" heading above already adds its own
+       three since the t("Streak") heading above already adds its own
        padding-bottom; bottom/left/right stay as-is for spacing below the
        stat tiles and around the edges. */
     StreakSummary { padding: 6px 22px 16px 22px; border-top: 1px solid #e0e0e0; }
@@ -54,8 +55,8 @@ StreakSummary::StreakSummary(QJsonObject json, QWidget *parent) : QFrame(parent)
   QWidget     *statsRow    = new QWidget(this);
   QHBoxLayout *statsLayout = new QHBoxLayout(statsRow);
   statsLayout->setContentsMargins(0, 0, 0, 0);
-  statsLayout->addWidget(statTile("Current streak", current, "#000000", statsRow), 1);
-  statsLayout->addWidget(statTile("Longest streak", longest, "#000000", statsRow), 1);
+  statsLayout->addWidget(statTile(t("Current streak"), current, "#000000", statsRow), 1);
+  statsLayout->addWidget(statTile(t("Longest streak"), longest, "#000000", statsRow), 1);
   layout->addWidget(statsRow);
 
   if (!requirement.isEmpty()) {

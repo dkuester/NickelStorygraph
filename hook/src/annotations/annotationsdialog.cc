@@ -10,10 +10,11 @@
 #include "../widgets/elidedlabel.h"
 #include "annotationsdialog.h"
 #include "annotationsrow.h"
+#include "../translations.h"
 
 void AnnotationsDialog::show() { new AnnotationsDialog(); }
 
-AnnotationsDialog::AnnotationsDialog() : Dialog("Annotations") {
+AnnotationsDialog::AnnotationsDialog() : Dialog(t("Annotations")) {
   setStyleSheet(R"(
     [qApp_deviceIsTrilogy=true] QStackedWidget {
       margin: 0 20px;
@@ -56,7 +57,7 @@ void AnnotationsDialog::requestPage(int index) {
   int length = bookmarks.size();
 
   if (length < 1) {
-    pages->setStatusText("No annotations found.");
+    pages->setStatusText(t("No annotations found."));
     return;
   }
 

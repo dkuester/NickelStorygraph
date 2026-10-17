@@ -9,6 +9,7 @@
 #include "../nickelstoregraph.h"
 #include "label.h"
 #include "pagedstack.h"
+#include "../translations.h"
 
 PagedStack::PagedStack(QWidget *parent) : QWidget(parent) {
   QApplication::instance()->installEventFilter(new PagedStackFilter(this));
@@ -68,7 +69,7 @@ PagedStack::PagedStack(QWidget *parent) : QWidget(parent) {
 
   status = new Label(Label::Small, "");
   status->setAlignment(Qt::AlignCenter);
-  status->setText("Loading. Please wait...");
+  status->setText(t("Loading. Please wait..."));
 
   stack->addWidget(status);
 }
@@ -92,10 +93,10 @@ void PagedStack::setCurrent(int value) {
   if (total == 1) {
     label->hide();
   } else if (total > 1) {
-    label->setText(QString("Page %1 of %2").arg(current).arg(total));
+    label->setText(QString(t("Page %1 of %2")).arg(current).arg(total));
     label->show();
   } else if (current > 0) {
-    label->setText(QString("Page %1").arg(current));
+    label->setText(QString(t("Page %1")).arg(current));
     label->show();
   }
 }
@@ -140,7 +141,7 @@ void PagedStack::clear() {
     delete item;
   }
 
-  status->setText("Loading. Please wait...");
+  status->setText(t("Loading. Please wait..."));
   setTotal(0);
   setCurrent(0);
 }

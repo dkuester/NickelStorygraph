@@ -12,10 +12,11 @@
 #include "../widgets/buttongroup.h"
 #include "editionrow.h"
 #include "editionsdialog.h"
+#include "../translations.h"
 
 EditionsDialog *EditionsDialog::show(QString bookId) { return new EditionsDialog(bookId); }
 
-EditionsDialog::EditionsDialog(QString bookId) : Dialog("Manually link book"), bookId(bookId) {
+EditionsDialog::EditionsDialog(QString bookId) : Dialog(t("Manually link book")), bookId(bookId) {
   setStyleSheet(R"(
     [qApp_deviceIsTrilogy=true] QStackedWidget {
       margin: 0 20px;
@@ -61,7 +62,7 @@ EditionsDialog::EditionsDialog(QString bookId) : Dialog("Manually link book"), b
   layout->setContentsMargins(0, 0, 0, 0);
   layout->addLayout(hbox);
 
-  ButtonGroup *formatGroup = new ButtonGroup({{"All", 0}, {"Print", 1}, {"E-Book", 4}}, readingFormat);
+  ButtonGroup *formatGroup = new ButtonGroup({{t("All"), 0}, {t("Print"), 1}, {t("E-Book"), 4}}, readingFormat);
   hbox->addWidget(formatGroup);
   QObject::connect(formatGroup, &ButtonGroup::valueChanged, this, &EditionsDialog::readingFormatChanged);
 
@@ -97,7 +98,7 @@ void EditionsDialog::requestPage(int index) {
   int length = editions.size();
 
   if (length < 1) {
-    pages->setStatusText("No editions found.");
+    pages->setStatusText(t("No editions found."));
     return;
   }
 

@@ -9,6 +9,7 @@
 #include "search/searchdialog.h"
 #include "settings.h"
 #include "synccontroller.h"
+#include "translations.h"
 
 CLI *CLI::getFeed(Options options)  { return new CLI({"get-feed"},  options); }
 
@@ -261,8 +262,8 @@ void CLI::processFinished(int exitCode) {
       ConfirmationDialog *dialog = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
       QString contentId = options.contentId.isEmpty() ? SyncController::getInstance()->contentId : options.contentId;
       ConfirmationDialog__setAcceptButtonText(
-          dialog, Settings::getInstance()->getLinkedId(contentId).isEmpty() ? "Link book" : "Unlink book");
-      ConfirmationDialog__setRejectButtonText(dialog, "Cancel");
+          dialog, Settings::getInstance()->getLinkedId(contentId).isEmpty() ? t("Link book") : t("Unlink book"));
+      ConfirmationDialog__setRejectButtonText(dialog, t("Cancel"));
       ConfirmationDialog__setTitle(dialog, "StoryGraph");
       ConfirmationDialog__setText(dialog, obj.value("message").toString());
 

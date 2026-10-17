@@ -17,6 +17,7 @@
 #include "settings.h"
 #include "settings/settingsdialog.h"
 #include "synccontroller.h"
+#include "translations.h"
 
 NickelTouchMenu *MenuController::showMenu(QList<Item> items, QWidget *anchor, int offset, bool checkable,
                                           bool decorated) {
@@ -94,15 +95,15 @@ void MenuController::showMainMenu() {
   bool hasLinkedId = !settings->getLinkedId(contentId).isEmpty();
 
   QList<Item> items = {
-      {"Sync now", MenuOption::SYNC_NOW},
-      {settings->isEnabled(contentId) ? "Disable auto-sync" : "Enable auto-sync", MenuOption::TOGGLE_ENABLED},
-      {"Book management", MenuOption::BOOK_MANAGEMENT},
+      {t("Sync now"), MenuOption::SYNC_NOW},
+      {settings->isEnabled(contentId) ? t("Disable auto-sync") : t("Enable auto-sync"), MenuOption::TOGGLE_ENABLED},
+      {t("Book management"), MenuOption::BOOK_MANAGEMENT},
   };
   if (hasLinkedId) {
-    items.append({"Open reading journal", MenuOption::JOURNAL});
-    items.append({"Write a review", MenuOption::REVIEW});
+    items.append({t("Open reading journal"), MenuOption::JOURNAL});
+    items.append({t("Write a review"), MenuOption::REVIEW});
   }
-  items.append({"Settings", MenuOption::SETTINGS});
+  items.append({t("Settings"), MenuOption::SETTINGS});
 
   NickelTouchMenu *menu = showMenu(items, icon, 6);
   QWidget::connect(menu, &QMenu::aboutToHide, icon, [this] { setSelected(false); });
@@ -127,12 +128,12 @@ void MenuController::showStatusMenu(QJsonObject doc) {
 
   NickelTouchMenu *menu = showMenu(
       {
-          {"Back", MenuOption::BACK, true},
-          {"Want to Read", MenuOption::WANT_TO_READ, status == MenuOption::WANT_TO_READ},
-          {"Currently Reading", MenuOption::CURRENTLY_READING, status == MenuOption::CURRENTLY_READING || status == 6},
-          {"Paused", MenuOption::PAUSED, status == MenuOption::PAUSED},
-          {"Read", MenuOption::READ, status == MenuOption::READ},
-          {"Did Not Finish", MenuOption::DID_NOT_FINISH, status == MenuOption::DID_NOT_FINISH},
+          {t("Back"), MenuOption::BACK, true},
+          {t("Want to Read"), MenuOption::WANT_TO_READ, status == MenuOption::WANT_TO_READ},
+          {t("Currently Reading"), MenuOption::CURRENTLY_READING, status == MenuOption::CURRENTLY_READING || status == 6},
+          {t("Paused"), MenuOption::PAUSED, status == MenuOption::PAUSED},
+          {t("Read"), MenuOption::READ, status == MenuOption::READ},
+          {t("Did Not Finish"), MenuOption::DID_NOT_FINISH, status == MenuOption::DID_NOT_FINISH},
       },
       icon, 6, true);
   NickelTouchMenu__showDecoration(menu, true);
@@ -155,12 +156,12 @@ void MenuController::showBookManagementMenu() {
   bool hasLinkedId = !Settings::getInstance()->getLinkedId(ctl->contentId).isEmpty();
 
   QList<Item> items = {
-      {"Back", MenuOption::BACK, true},
-      {hasLinkedId ? "Unlink book" : "Manually link book", MenuOption::LINK},
+      {t("Back"), MenuOption::BACK, true},
+      {hasLinkedId ? t("Unlink book") : t("Manually link book"), MenuOption::LINK},
   };
   if (hasLinkedId) {
-    items.append({"Sync edition from web", MenuOption::SYNC_EDITION});
-    items.append({"Update book status", MenuOption::BOOK_STATUS});
+    items.append({t("Sync edition from web"), MenuOption::SYNC_EDITION});
+    items.append({t("Update book status"), MenuOption::BOOK_STATUS});
   }
 
   NickelTouchMenu *menu = showMenu(items, icon, 6);
@@ -199,10 +200,10 @@ void MenuController::triggered(QAction *action) {
         Settings::getInstance()->setStatus(SyncController::getInstance()->contentId, status);
 
       ConfirmationDialog *prompt = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
-      ConfirmationDialog__setTitle(prompt, "Book complete!");
-      ConfirmationDialog__setText(prompt, "Would you like to write a review?");
-      ConfirmationDialog__setAcceptButtonText(prompt, "Yes");
-      ConfirmationDialog__setRejectButtonText(prompt, "No");
+      ConfirmationDialog__setTitle(prompt, t("Book complete!"));
+      ConfirmationDialog__setText(prompt, t("Would you like to write a review?"));
+      ConfirmationDialog__setAcceptButtonText(prompt, t("Yes"));
+      ConfirmationDialog__setRejectButtonText(prompt, t("No"));
       ConfirmationDialog__showCloseButton(prompt, false);
       QObject::connect(prompt, &QDialog::accepted, prompt, [prompt]() {
         ReviewDialog::show();
@@ -249,7 +250,7 @@ void MenuController::triggered(QAction *action) {
       if (newBookId.isEmpty()) return;
       QString oldBookId = Settings::getInstance()->getLinkedId(contentId);
       Settings::getInstance()->setLinkedId(contentId, newBookId);
-      QString msg = (newBookId != oldBookId) ? "Edition updated from StoryGraph." : "Edition is already up to date.";
+      QString msg = (newBookId != oldBookId) ? t("Edition updated from StoryGraph.") : t("Edition is already up to date.");
       ConfirmationDialogFactory__showErrorDialog("StoryGraph", msg);
     });
     break;

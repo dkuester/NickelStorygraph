@@ -9,6 +9,7 @@
 #include "../widgets/elidedlabel.h"
 #include "annotationsrow.h"
 #include "qnamespace.h"
+#include "../translations.h"
 
 AnnotationsRow::AnnotationsRow(QJsonObject doc, QWidget *parent) : QFrame(parent), doc(doc) {
   setStyleSheet(R"(
@@ -55,7 +56,7 @@ AnnotationsRow::AnnotationsRow(QJsonObject doc, QWidget *parent) : QFrame(parent
   vbox->addWidget(new Label(Label::Small, n == 1 ? "1 annotation" : QString::number(n) + " annotations"));
 
   N3ButtonLabel *button = construct_N3ButtonLabel(this);
-  button->setText("Sync Now");
+  button->setText(t("Sync Now"));
   hbox->addWidget(button, 0, Qt::AlignTop);
   QObject::connect(button, SIGNAL(tapped(bool)), this, SLOT(tapped()));
 }
@@ -63,7 +64,7 @@ AnnotationsRow::AnnotationsRow(QJsonObject doc, QWidget *parent) : QFrame(parent
 void AnnotationsRow::tapped() {
   dialog = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
   ConfirmationDialog__showCloseButton(dialog, false);
-  ConfirmationDialog__setText(dialog, "Syncing annotations with StoryGraph...");
+  ConfirmationDialog__setText(dialog, t("Syncing annotations with StoryGraph..."));
   dialog->open();
 
   CLI::Options options;
@@ -80,7 +81,7 @@ void AnnotationsRow::success() {
   if (dialog == nullptr)
     return;
 
-  ConfirmationDialog__setText(dialog, "Success!");
+  ConfirmationDialog__setText(dialog, t("Success!"));
   QTimer::singleShot(800, this, &AnnotationsRow::closeDialog);
 }
 

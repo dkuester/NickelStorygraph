@@ -11,10 +11,11 @@
 #include "menurow.h"
 #include "settingsdialog.h"
 #include "staticrow.h"
+#include "../translations.h"
 
 void SettingsDialog::show(bool fromHomeMenu) { new SettingsDialog(fromHomeMenu); }
 
-SettingsDialog::SettingsDialog(bool fromHomeMenu) : Dialog("Settings", fromHomeMenu), fromHomeMenu(fromHomeMenu) {
+SettingsDialog::SettingsDialog(bool fromHomeMenu) : Dialog(t("Settings"), fromHomeMenu), fromHomeMenu(fromHomeMenu) {
   setStyleSheet(R"(
     [qApp_deviceIsTrilogy=true] Label[textSize="ExtraLarge"] {
       margin: 24px 36px 12px;
@@ -148,7 +149,7 @@ SettingsDialog::SettingsDialog(bool fromHomeMenu) : Dialog("Settings", fromHomeM
   layout->setContentsMargins(0, 0, 0, 0);
   layout->setSpacing(0);
 
-  layout->addWidget(new Label(Label::ExtraLarge, "Settings"));
+  layout->addWidget(new Label(Label::ExtraLarge, t("Settings")));
 
   pages = new PagedStack();
   layout->addWidget(pages);
@@ -200,13 +201,13 @@ QFrame *SettingsDialog::buildGeneral() {
   layout->setSpacing(0);
   layout->setContentsMargins(0, 0, 0, 0);
 
-  layout->addWidget(new Label(Label::Avenir, "General"));
+  layout->addWidget(new Label(Label::Avenir, t("General")));
 
-  StaticRow *row = new StaticRow("Version", NH_VERSION, false);
+  StaticRow *row = new StaticRow(t("Version"), NH_VERSION, false);
   layout->addWidget(row);
   row->setProperty("noBorder", true);
 
-  username = new StaticRow("Authorized user", "Unknown", false);
+  username = new StaticRow(t("Authorized user"), t("Unknown"), false);
   layout->addWidget(username);
 
   CLI::Options options;
@@ -216,21 +217,21 @@ QFrame *SettingsDialog::buildGeneral() {
   QObject::connect(cli, &CLI::response, this, &SettingsDialog::setUsername);
 
   CheckboxRow *checkboxRow =
-      new CheckboxRow("Enable auto-sync by default", Settings::getInstance()->getAutoSyncDefault());
+      new CheckboxRow(t("Enable auto-sync by default"), Settings::getInstance()->getAutoSyncDefault());
   QObject::connect(checkboxRow, &CheckboxRow::triggered, this, &SettingsDialog::setAutoSyncDefault);
   layout->addWidget(checkboxRow);
 
-  MenuRow *menuRow = new MenuRow("Sync annotations to reading journal", MenuRowType::Menu,
-                                 {{"Always", "always"}, {"Manual only", "manual"}, {"On finish", "finished"}, {"Never", "never"}},
+  MenuRow *menuRow = new MenuRow(t("Sync annotations to reading journal"), MenuRowType::Menu,
+                                 {{t("Always"), "always"}, {t("Manual only"), "manual"}, {t("On finish"), "finished"}, {t("Never"), "never"}},
                                  {}, Settings::getInstance()->getSyncBookmarks());
   QObject::connect(menuRow, &MenuRow::triggered, this, &SettingsDialog::setSyncBookmarks);
   layout->addWidget(menuRow);
 
-  checkboxRow = new CheckboxRow("Simple review (rating and thoughts only)", Settings::getInstance()->getSimpleReview());
+  checkboxRow = new CheckboxRow(t("Simple review (rating and thoughts only)"), Settings::getInstance()->getSimpleReview());
   QObject::connect(checkboxRow, &CheckboxRow::triggered, this, &SettingsDialog::setSimpleReview);
   layout->addWidget(checkboxRow);
 
-  checkboxRow = new CheckboxRow("Prompt to review or mark finished on completion",
+  checkboxRow = new CheckboxRow(t("Prompt to review or mark finished on completion"),
                                 Settings::getInstance()->getCompletionPrompt());
   QObject::connect(checkboxRow, &CheckboxRow::triggered, this, &SettingsDialog::setCompletionPrompt);
   layout->addWidget(checkboxRow);
@@ -244,7 +245,7 @@ QFrame *SettingsDialog::buildAutoSync() {
   layout->setSpacing(0);
   layout->setContentsMargins(0, 0, 0, 0);
 
-  layout->addWidget(new Label(Label::Avenir, "Auto-sync"));
+  layout->addWidget(new Label(Label::Avenir, t("Auto-sync")));
 
   Settings *settings = Settings::getInstance();
 
@@ -270,7 +271,7 @@ QFrame *SettingsDialog::buildAutoSync() {
   }
 
   MenuRow *menuRow =
-      new MenuRow("Once per day", MenuRowType::Menu, {{"Never", 0}, {"Set time of day", MenuRow::OPEN_DIALOG}}, hours,
+      new MenuRow(t("Once per day"), MenuRowType::Menu, {{t("Never"), 0}, {t("Set time of day"), MenuRow::OPEN_DIALOG}}, hours,
                   settings->getSyncDaily());
   QObject::connect(menuRow, &MenuRow::triggered, this, &SettingsDialog::setSyncDaily);
   layout->addWidget(menuRow);
@@ -281,14 +282,14 @@ QFrame *SettingsDialog::buildAutoSync() {
     thresholdItems.append({QString::number(i).append("%"), i});
   }
 
-  menuRow = new MenuRow("After closing a book or the Kobo is put to sleep", MenuRowType::Menu,
-                        {{"Always", 1}, {"Never", 0}, {"Set a threshold", MenuRow::OPEN_DIALOG}}, thresholdItems,
+  menuRow = new MenuRow(t("After closing a book or the Kobo is put to sleep"), MenuRowType::Menu,
+                        {{t("Always"), 1}, {t("Never"), 0}, {t("Set a threshold"), MenuRow::OPEN_DIALOG}}, thresholdItems,
                         QVariant(settings->getCloseThreshold()));
   QObject::connect(menuRow, &MenuRow::triggered, this, &SettingsDialog::setCloseThreshold);
   layout->addWidget(menuRow);
 
-  menuRow = new MenuRow("Periodically by read percentage", MenuRowType::Menu,
-                        {{"Never", 0}, {"Set a threshold", MenuRow::OPEN_DIALOG}}, thresholdItems,
+  menuRow = new MenuRow(t("Periodically by read percentage"), MenuRowType::Menu,
+                        {{t("Never"), 0}, {t("Set a threshold"), MenuRow::OPEN_DIALOG}}, thresholdItems,
                         QVariant(settings->getPageThreshold()));
   QObject::connect(menuRow, &MenuRow::triggered, this, &SettingsDialog::setPageThreshold);
   layout->addWidget(menuRow);
@@ -302,27 +303,27 @@ QFrame *SettingsDialog::buildHomeMenu() {
   layout->setSpacing(0);
   layout->setContentsMargins(0, 0, 0, 0);
 
-  layout->addWidget(new Label(Label::Avenir, "Home menu"));
+  layout->addWidget(new Label(Label::Avenir, t("Home menu")));
 
   Settings *settings = Settings::getInstance();
   bool homeMenuEnabled = settings->getHomeMenuEnabled();
 
-  CheckboxRow *row = new CheckboxRow("Show StoryGraph button on home screen", homeMenuEnabled);
+  CheckboxRow *row = new CheckboxRow(t("Show StoryGraph button on home screen"), homeMenuEnabled);
   QObject::connect(row, &CheckboxRow::triggered, this, &SettingsDialog::setHomeMenuEnabled);
   layout->addWidget(row);
   row->setProperty("noBorder", true);
 
-  homeMenuReadingRow = new CheckboxRow("Currently Reading", settings->getHomeMenuReading());
+  homeMenuReadingRow = new CheckboxRow(t("Currently Reading"), settings->getHomeMenuReading());
   QObject::connect(homeMenuReadingRow, &CheckboxRow::triggered, this, &SettingsDialog::setHomeMenuReading);
   homeMenuReadingRow->setRowEnabled(homeMenuEnabled);
   layout->addWidget(homeMenuReadingRow);
 
-  homeMenuFeedRow = new CheckboxRow("Community Feed", settings->getHomeMenuFeed());
+  homeMenuFeedRow = new CheckboxRow(t("Community Feed"), settings->getHomeMenuFeed());
   QObject::connect(homeMenuFeedRow, &CheckboxRow::triggered, this, &SettingsDialog::setHomeMenuFeed);
   homeMenuFeedRow->setRowEnabled(homeMenuEnabled);
   layout->addWidget(homeMenuFeedRow);
 
-  homeMenuGoalsRow = new CheckboxRow("Reading Goals", settings->getHomeMenuGoals());
+  homeMenuGoalsRow = new CheckboxRow(t("Reading Goals"), settings->getHomeMenuGoals());
   QObject::connect(homeMenuGoalsRow, &CheckboxRow::triggered, this, &SettingsDialog::setHomeMenuGoals);
   homeMenuGoalsRow->setRowEnabled(homeMenuEnabled);
   layout->addWidget(homeMenuGoalsRow);
@@ -336,20 +337,20 @@ QFrame *SettingsDialog::buildInformation() {
   layout->setSpacing(0);
   layout->setContentsMargins(0, 0, 0, 0);
 
-  layout->addWidget(new Label(Label::Avenir, "Book information"));
+  layout->addWidget(new Label(Label::Avenir, t("Book information")));
 
   SyncController *ctl = SyncController::getInstance();
   QDateTime alarm = ctl->getAlarm();
   StaticRow *row =
-      new StaticRow("Auto-sync scheduled for", alarm.isValid() ? alarm.toLocalTime().toString() : "Never", false);
+      new StaticRow(t("Auto-sync scheduled for"), alarm.isValid() ? alarm.toLocalTime().toString() : t("Never"), false);
   layout->addWidget(row);
   row->setProperty("noBorder", true);
 
-  row = new StaticRow("Current progress", QString::number(ctl->getReadProgress()).append("%"), false);
+  row = new StaticRow(t("Current progress"), QString::number(ctl->getReadProgress()).append("%"), false);
   layout->addWidget(row);
 
   int progress = Settings::getInstance()->getLastProgress(ctl->contentId);
-  row = new StaticRow("Last synced", progress <= 0 ? "Never" : QString::number(progress).append("%"), true);
+  row = new StaticRow(t("Last synced"), progress <= 0 ? t("Never") : QString::number(progress).append("%"), true);
   layout->addWidget(row);
   QObject::connect(row, &StaticRow::clear, this, &SettingsDialog::clearLastSynced);
 
@@ -362,14 +363,14 @@ QFrame *SettingsDialog::buildAdvanced() {
   layout->setSpacing(0);
   layout->setContentsMargins(0, 0, 0, 0);
 
-  layout->addWidget(new Label(Label::Avenir, "Advanced"));
+  layout->addWidget(new Label(Label::Avenir, t("Advanced")));
 
-  CheckboxRow *checkboxRow = new CheckboxRow("Debug logs", Settings::getInstance()->getDebug());
+  CheckboxRow *checkboxRow = new CheckboxRow(t("Debug logs"), Settings::getInstance()->getDebug());
   QObject::connect(checkboxRow, &CheckboxRow::triggered, this, &SettingsDialog::setDebug);
   layout->addWidget(checkboxRow);
   checkboxRow->setProperty("noBorder", true);
 
-  MenuRow *menuRow = new MenuRow("Save system logs", MenuRowType::Tap, {{"Save", true}}, {}, true);
+  MenuRow *menuRow = new MenuRow(t("Save system logs"), MenuRowType::Tap, {{t("Save"), true}}, {}, true);
   QObject::connect(menuRow, &MenuRow::triggered, this, &SettingsDialog::saveLogs);
   layout->addWidget(menuRow);
 
@@ -395,7 +396,7 @@ void SettingsDialog::clearLastSynced() {
 
   StaticRow *row = qobject_cast<StaticRow *>(sender());
   int progress = settings->getLastProgress(contentId);
-  row->setValue(progress <= 0 ? "Never" : QString::number(progress).append("%"));
+  row->setValue(progress <= 0 ? t("Never") : QString::number(progress).append("%"));
 }
 
 void SettingsDialog::setSimpleReview(bool value) { Settings::getInstance()->setSimpleReview(value); }
