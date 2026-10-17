@@ -15,6 +15,7 @@
 #include "../widgets/label.h"
 #include "../widgets/rating.h"
 #include "reviewdialog.h"
+#include "../translations.h"
 
 static const struct { int id; const char *name; } MOODS[] = {
   {1,  "adventurous"}, {2,  "challenging"}, {3,  "dark"},        {4,  "emotional"},
@@ -25,7 +26,7 @@ static const struct { int id; const char *name; } MOODS[] = {
 
 void ReviewDialog::show() { new ReviewDialog(); }
 
-ReviewDialog::ReviewDialog() : Dialog("Write your review") {
+ReviewDialog::ReviewDialog() : Dialog(t("Write your review")) {
   setStyleSheet(R"(
     N3ButtonLabel[moodSelected=true]  { background-color: #262626; color: white; }
     N3ButtonLabel[moodSelected=false] { background-color: #d9d9d9; color: black; }
@@ -72,7 +73,7 @@ ReviewDialog::ReviewDialog() : Dialog("Write your review") {
   contentLayout->setSpacing(16);
   contentLayout->setContentsMargins(0, 8, 0, 8);
 
-  Label *loading = new Label(Label::Small, "Loading. Please wait...");
+  Label *loading = new Label(Label::Small, t("Loading. Please wait..."));
   loading->setAlignment(Qt::AlignCenter);
   contentLayout->addWidget(loading, 1);
 
@@ -178,16 +179,16 @@ void ReviewDialog::response(QJsonObject doc) {
   QWidget *thoughtsHeader = new QWidget(cw);
   QHBoxLayout *thoughtsHeaderRow = new QHBoxLayout(thoughtsHeader);
   thoughtsHeaderRow->setContentsMargins(0, 0, 0, 0);
-  thoughtsHeaderRow->addWidget(new Label(Label::Medium, "YOUR THOUGHTS"));
+  thoughtsHeaderRow->addWidget(new Label(Label::Medium, t("YOUR THOUGHTS")));
   thoughtsHeaderRow->addStretch(1);
   N3ButtonLabel *clearBtn = construct_N3ButtonLabel(thoughtsHeader);
-  clearBtn->setText("Clear");
+  clearBtn->setText(t("Clear"));
   clearBtn->setProperty("borderedButton", true);
   thoughtsHeaderRow->addWidget(clearBtn);
   contentLayout->addWidget(thoughtsHeader);
 
   touchText = construct_TouchTextEdit(cw);
-  TouchTextEdit__setCustomPlaceholderText(touchText, "Share your thoughts about this book with the world.");
+  TouchTextEdit__setCustomPlaceholderText(touchText, t("Share your thoughts about this book with the world."));
   touchText->setMinimumHeight(300);
   QTextEdit *textEdit = touchText->findChild<QTextEdit *>();
   textEdit->setText(doc.value("review_raw").toString(""));
@@ -197,18 +198,18 @@ void ReviewDialog::response(QJsonObject doc) {
 
   if (Settings::getInstance()->getSimpleReview()) {
     N3ButtonLabel *submitBtn = construct_N3ButtonLabel(cw);
-    submitBtn->setText("Submit review");
+    submitBtn->setText(t("Submit review"));
     submitBtn->setProperty("primaryButton", true);
     contentLayout->addWidget(submitBtn);
     QObject::connect(submitBtn, SIGNAL(tapped(bool)), this, SLOT(commit()));
     contentLayout->addStretch(1);
-    buildKeyboardFrameHideOnly(textEdit, "Done");
+    buildKeyboardFrameHideOnly(textEdit, t("Done"));
     return;
   }
 
   // ── Moods ── 4 columns to fit smaller screens ────────────────────────────────
   { QWidget *sep = new QWidget(cw); sep->setFixedHeight(16); contentLayout->addWidget(sep); }
-  contentLayout->addWidget(new Label(Label::Medium, "MOODS"));
+  contentLayout->addWidget(new Label(Label::Medium, t("MOODS")));
 
   static const int MOOD_COLS = 4;
   static const int MOOD_COUNT = 14;
@@ -230,7 +231,7 @@ void ReviewDialog::response(QJsonObject doc) {
     if (count < MOOD_COLS) rowLayout->addStretch(1);
     for (int i = start; i < end; i++) {
       N3ButtonLabel *btn = construct_N3ButtonLabel(rowWidget);
-      btn->setText(MOODS[i].name);
+      btn->setText(t(MOODS[i].name));
       btn->setProperty("moodId", MOODS[i].id);
       btn->setProperty("moodSelected", false);
       rowLayout->addWidget(btn, 1);
@@ -244,9 +245,9 @@ void ReviewDialog::response(QJsonObject doc) {
 
   // ── Book properties ── single-select toggle groups ───────────────────────────
   { QWidget *sep = new QWidget(cw); sep->setFixedHeight(16); contentLayout->addWidget(sep); }
-  contentLayout->addWidget(new Label(Label::Medium, "BOOK PROPERTIES"));
+  contentLayout->addWidget(new Label(Label::Medium, t("BOOK PROPERTIES")));
 
-  auto addQuestionRow = [&](const char *labelText, QList<Item> options, QString *field) {
+  auto addQuestionRow = [&](const QString &labelText, QList<Item> options, QString *field) {
     contentLayout->addWidget(new Label(Label::Small, labelText));
 
     QWidget *container = new QWidget(cw);
@@ -257,7 +258,7 @@ void ReviewDialog::response(QJsonObject doc) {
 
     for (const Item &opt : options) {
       N3ButtonLabel *btn = construct_N3ButtonLabel(container);
-      btn->setText(opt.text);
+      btn->setText(t(opt.text));
       btn->setProperty("questionValue", opt.value);
       btn->setProperty("moodSelected", false);
       row->addWidget(btn, 1);
@@ -267,30 +268,30 @@ void ReviewDialog::response(QJsonObject doc) {
     contentLayout->addWidget(container);
   };
 
-  addQuestionRow("Pace",
+  addQuestionRow(t("Pace"),
     {{"Slow", "slow"}, {"Medium", "medium"}, {"Fast", "fast"}},
     &pace);
 
-  addQuestionRow("Plot or character driven?",
+  addQuestionRow(t("Plot or character driven?"),
     {{"Plot", "Plot"}, {"Character", "Character"}, {"A mix", "A mix"}, {"N/A", "N/A"}},
     &characterOrPlotDriven);
 
   QList<Item> yesNo = {{"Yes", "Yes"}, {"No", "No"}, {"Complicated", "It's complicated"}, {"N/A", "N/A"}};
-  addQuestionRow("Strong character dev?",       yesNo, &strongCharacterDev);
-  addQuestionRow("Characters loveable?",        yesNo, &loveableCharacters);
-  addQuestionRow("Diverse cast?",               yesNo, &diverseCharacters);
-  addQuestionRow("Character flaws main focus?", yesNo, &flawedCharacters);
+  addQuestionRow(t("Strong character dev?"),       yesNo, &strongCharacterDev);
+  addQuestionRow(t("Characters loveable?"),        yesNo, &loveableCharacters);
+  addQuestionRow(t("Diverse cast?"),               yesNo, &diverseCharacters);
+  addQuestionRow(t("Character flaws main focus?"), yesNo, &flawedCharacters);
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   N3ButtonLabel *submitBtn = construct_N3ButtonLabel(cw);
-  submitBtn->setText("Submit review");
+  submitBtn->setText(t("Submit review"));
   submitBtn->setProperty("primaryButton", true);
   contentLayout->addWidget(submitBtn);
   QObject::connect(submitBtn, SIGNAL(tapped(bool)), this, SLOT(commit()));
 
   contentLayout->addStretch(1);
 
-  buildKeyboardFrameHideOnly(textEdit, "Done");
+  buildKeyboardFrameHideOnly(textEdit, t("Done"));
 }
 
 // ── Rating helpers ────────────────────────────────────────────────────────────
@@ -370,10 +371,10 @@ void ReviewDialog::commit() {
     dialog->deleteLater();
 
     ConfirmationDialog *prompt = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
-    ConfirmationDialog__setTitle(prompt, "Review Saved!");
-    ConfirmationDialog__setText(prompt, "Would you like to update this book's reading status on Storygraph?");
-    ConfirmationDialog__setAcceptButtonText(prompt, "Finished");
-    ConfirmationDialog__setRejectButtonText(prompt, "Did Not Finish");
+    ConfirmationDialog__setTitle(prompt, t("Review Saved!"));
+    ConfirmationDialog__setText(prompt, t("Would you like to update this book's reading status on Storygraph?"));
+    ConfirmationDialog__setAcceptButtonText(prompt, t("Finished"));
+    ConfirmationDialog__setRejectButtonText(prompt, t("Did Not Finish"));
     ConfirmationDialog__showCloseButton(prompt, true);
     QObject::connect(prompt, &QDialog::accepted, prompt, [prompt]() {
       CLI::setUserBook(3);

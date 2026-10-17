@@ -5,6 +5,7 @@
 
 #include "../widgets/label.h"
 #include "checkboxrow.h"
+#include "../translations.h"
 
 CheckboxRow::CheckboxRow(QString heading, bool checked, QWidget *parent) : QWidget(parent), checked(checked) {
   QVBoxLayout *layout = new QVBoxLayout(this);
@@ -20,7 +21,7 @@ CheckboxRow::CheckboxRow(QString heading, bool checked, QWidget *parent) : QWidg
   rowLayout->addWidget(headingLabel, 1);
 
   checkbox = construct_TouchCheckBox(this);
-  checkbox->setText(checked ? "On" : "Off");
+  checkbox->setText(checked ? t("On") : t("Off"));
   checkbox->setChecked(checked);
   checkbox->setAttribute(Qt::WA_TransparentForMouseEvents);
   rowLayout->addWidget(checkbox);
@@ -34,7 +35,7 @@ void CheckboxRow::tapped() {
 
   checked = !checked;
   checkbox->setChecked(checked);
-  checkbox->setText(checked ? "On" : "Off");
+  checkbox->setText(checked ? t("On") : t("Off"));
   triggered(checked);
 }
 

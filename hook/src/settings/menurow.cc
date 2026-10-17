@@ -8,6 +8,7 @@
 #include "../menucontroller.h"
 #include "../widgets/label.h"
 #include "menurow.h"
+#include "../translations.h"
 
 QVariant MenuRow::OPEN_DIALOG = QVariant("OPEN_DIALOG");
 
@@ -25,7 +26,7 @@ MenuRow::MenuRow(QString heading, MenuRowType type, QList<Item> menuItems, QList
   rowLayout->setContentsMargins(0, 0, 0, 0);
   rowLayout->addWidget(new Label(Label::Medium, heading), 1);
 
-  label = new Label(Label::Medium, "Unset");
+  label = new Label(Label::Medium, t("Unset"));
   label->setProperty("style", "italic");
   rowLayout->addWidget(label);
 
@@ -82,16 +83,16 @@ void MenuRow::setItem(Item item) {
 void MenuRow::showDialog() {
   ConfirmationDialog *dialog = ConfirmationDialogFactory__getConfirmationDialog(this);
   QLabel *title = dialog->findChild<QLabel *>("title");
-  title->setText("Enter a value");
+  title->setText(t("Enter a value"));
   title->show();
 
   QLabel *rejectButton = dialog->findChild<QLabel *>("rejectButton");
-  rejectButton->setText("Cancel");
+  rejectButton->setText(t("Cancel"));
   rejectButton->show();
   QObject::connect(rejectButton, SIGNAL(tapped(bool)), dialog, SLOT(deleteLater()));
 
   QLabel *acceptButton = dialog->findChild<QLabel *>("acceptButton");
-  acceptButton->setText("Set");
+  acceptButton->setText(t("Set"));
   acceptButton->show();
   QObject::connect(acceptButton, SIGNAL(tapped(bool)), this, SLOT(accept()));
 

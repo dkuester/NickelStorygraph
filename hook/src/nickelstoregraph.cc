@@ -23,6 +23,7 @@
 #include "settings.h"
 #include "settings/settingsdialog.h"
 #include "synccontroller.h"
+#include "translations.h"
 
 typedef void ReadingController;
 typedef void Volume;
@@ -368,12 +369,12 @@ void showStorygraphHomeMenu(QWidget *anchor) {
 
   QList<Item> items;
   if (settings->getHomeMenuReading())
-    items.append({"Currently Reading", 1});
+    items.append({t("Currently Reading"), 1});
   if (settings->getHomeMenuFeed())
-    items.append({"Community Feed", 2});
+    items.append({t("Community Feed"), 2});
   if (settings->getHomeMenuGoals())
-    items.append({"Reading Goals", 3});
-  items.append({"Settings", 4});
+    items.append({t("Reading Goals"), 3});
+  items.append({t("Settings"), 4});
 
   if (!anchor) return;
 
@@ -404,7 +405,7 @@ void showStorygraphHomeMenu(QWidget *anchor) {
       else if (val == 2) FeedDialog::show();
       else if (val == 3) GoalsDialog::show();
       // No book is open on the home screen, so there's no contentId to show
-      // sync/progress info for - suppress the "Book information" section.
+      // sync/progress info for - suppress the t("Book information") section.
       else if (val == 4) SettingsDialog::show(true);
     });
     QObject::connect(mti, SIGNAL(tapped(bool)), action, SIGNAL(triggered()));

@@ -9,6 +9,7 @@
 #include "review/reviewdialog.h"
 #include "settings.h"
 #include "syncqueue.h"
+#include "translations.h"
 
 SyncQueue::SyncQueue(QObject *parent) : QObject(parent) {};
 
@@ -67,7 +68,7 @@ void SyncQueue::run(QString contentId, bool manual) {
   if (progress == 0) {
     nh_log("Attempted to sync %s with no saved reading progress", qPrintable(contentId));
     ConfirmationDialogFactory__showErrorDialog("StoryGraph",
-                                               "Reading progress must be at least 1% to sync with StoryGraph");
+                                               t("Reading progress must be at least 1% to sync with StoryGraph"));
     return;
   }
 
@@ -86,7 +87,7 @@ void SyncQueue::run(QString contentId, bool manual) {
   if (manual) {
     dialog = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
     ConfirmationDialog__showCloseButton(dialog, false);
-    ConfirmationDialog__setText(dialog, "Syncing with StoryGraph...");
+    ConfirmationDialog__setText(dialog, t("Syncing with StoryGraph..."));
     dialog->open();
   }
 
@@ -163,7 +164,7 @@ void SyncQueue::success() {
   lastProgress = 0;
 
   if (dialog != nullptr) {
-    ConfirmationDialog__setText(dialog, "Success!");
+    ConfirmationDialog__setText(dialog, t("Success!"));
     QTimer::singleShot(800, this, &SyncQueue::closeDialog);
   }
 }
@@ -176,11 +177,11 @@ void SyncQueue::showShelfConfirmation() {
   pendingShelfProgress = 0;
 
   ConfirmationDialog *prompt = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
-  ConfirmationDialog__setTitle(prompt, "Already on your shelf");
+  ConfirmationDialog__setTitle(prompt, t("Already on your shelf"));
   ConfirmationDialog__setText(prompt,
-      QString("Your StoryGraph shelf has this book at %1%. Keep that progress?").arg(shelfProgress));
-  ConfirmationDialog__setAcceptButtonText(prompt, "Keep StoryGraph progress");
-  ConfirmationDialog__setRejectButtonText(prompt, "Sync from Kobo");
+      QString(t("Your StoryGraph shelf has this book at %1%. Keep that progress?")).arg(shelfProgress));
+  ConfirmationDialog__setAcceptButtonText(prompt, t("Keep StoryGraph progress"));
+  ConfirmationDialog__setRejectButtonText(prompt, t("Sync from Kobo"));
   ConfirmationDialog__showCloseButton(prompt, false);
 
   QObject::connect(prompt, &QDialog::accepted, this, [this, shelfProgress, prompt]() {
@@ -206,10 +207,10 @@ void SyncQueue::showShelfConfirmation() {
 
 void SyncQueue::showCompletionPrompt(QString contentId) {
   ConfirmationDialog *prompt = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
-  ConfirmationDialog__setTitle(prompt, "Book Complete!");
-  ConfirmationDialog__setText(prompt, "Let StoryGraph know you finished: Write a review, or update your reading status?");
-  ConfirmationDialog__setAcceptButtonText(prompt, "Write a review");
-  ConfirmationDialog__setRejectButtonText(prompt, "Mark as finished");
+  ConfirmationDialog__setTitle(prompt, t("Book Complete!"));
+  ConfirmationDialog__setText(prompt, t("Let StoryGraph know you finished: Write a review, or update your reading status?"));
+  ConfirmationDialog__setAcceptButtonText(prompt, t("Write a review"));
+  ConfirmationDialog__setRejectButtonText(prompt, t("Mark as finished"));
   ConfirmationDialog__showCloseButton(prompt, true);
 
   QObject::connect(prompt, &QDialog::accepted, prompt, [prompt]() {

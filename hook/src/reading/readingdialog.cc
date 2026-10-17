@@ -14,6 +14,7 @@
 #include "readingdialog.h"
 #include "readingrow.h"
 #include "../widgets/label.h"
+#include "../translations.h"
 
 void ReadingDialog::show() { new ReadingDialog(); }
 
@@ -33,13 +34,13 @@ static const QString TAB_INACTIVE = QStringLiteral(
   "padding: 8px 16px;");
 
 ReadingDialog::ReadingDialog() : HomePanel("") {  
-  Label *heading = new Label(Label::ExtraLarge, "Currently Reading", this);
+  Label *heading = new Label(Label::ExtraLarge, t("Currently Reading"), this);
   heading->setAlignment(Qt::AlignCenter);
   heading->setStyleSheet(Label::Stylesheet + QStringLiteral("\n[textSize=\"ExtraLarge\"] { font-weight: bold; padding-top: 16px; padding-bottom: 12px; }"));
   contentLayout->addWidget(heading);
   contentLayout->addSpacing(10);
 
-  statusLabel = new QLabel("Loading...");
+  statusLabel = new QLabel(t("Loading..."));
   statusLabel->setAlignment(Qt::AlignCenter);
   contentLayout->addWidget(statusLabel, 1);
 
@@ -51,14 +52,14 @@ ReadingDialog::ReadingDialog() : HomePanel("") {
   tabLayout->setSpacing(0);
 
   readingTabBtn = reinterpret_cast<QLabel *>(construct_TouchLabel(tabBar));
-  readingTabBtn->setText("Reading");
+  readingTabBtn->setText(t("Reading"));
   readingTabBtn->setAlignment(Qt::AlignCenter);
   readingTabBtn->setStyleSheet(TAB_ACTIVE);
   QObject::connect(readingTabBtn, SIGNAL(tapped(bool)), this, SLOT(showReading()));
   tabLayout->addWidget(readingTabBtn, 1);
 
   pausedTabBtn = reinterpret_cast<QLabel *>(construct_TouchLabel(tabBar));
-  pausedTabBtn->setText("Paused");
+  pausedTabBtn->setText(t("Paused"));
   pausedTabBtn->setAlignment(Qt::AlignCenter);
   pausedTabBtn->setStyleSheet(TAB_INACTIVE);
   QObject::connect(pausedTabBtn, SIGNAL(tapped(bool)), this, SLOT(showPaused()));
@@ -99,8 +100,8 @@ void ReadingDialog::response(QJsonObject doc) {
   }
 
   // Update tab labels with counts
-  readingTabBtn->setText(QString("Reading (%1)").arg(reading.size()));
-  pausedTabBtn->setText(QString("Paused (%1)").arg(paused.size()));
+  readingTabBtn->setText(QString(t("Reading (%1)")).arg(reading.size()));
+  pausedTabBtn->setText(QString(t("Paused (%1)")).arg(paused.size()));
 
   statusLabel->hide();
 
@@ -117,7 +118,7 @@ void ReadingDialog::response(QJsonObject doc) {
 
 void ReadingDialog::fillPages(PagedStack *stack, const QJsonArray &books) {
   if (books.isEmpty()) {
-    stack->setStatusText("Nothing here.");
+    stack->setStatusText(t("Nothing here."));
     stack->setTotal(0);
     return;
   }
@@ -186,5 +187,5 @@ void ReadingDialog::showReading() { setActiveTab(true); }
 void ReadingDialog::showPaused()  { setActiveTab(false); }
 
 void ReadingDialog::failed() {
-  statusLabel->setText("Failed to load books.");
+  statusLabel->setText(t("Failed to load books."));
 }

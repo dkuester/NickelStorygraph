@@ -11,6 +11,7 @@
 #include "../synccontroller.h"
 #include "../widgets/elidedlabel.h"
 #include "editionrow.h"
+#include "../translations.h"
 
 EditionRow::EditionRow(QJsonObject json, QWidget *parent)
     : QFrame(parent), id(json.value("book_id").toString()) {
@@ -107,35 +108,35 @@ EditionRow::EditionRow(QJsonObject json, QWidget *parent)
       new ElidedLabel(Label::ExtraSmall, json.value("contributions").toVariant().toStringList().join(", ")));
 
   QString publisher = json.value("publisher").toString();
-  vbox->addWidget(new Label(Label::ExtraSmall, "<b>Publisher:</b> " + (publisher.isEmpty() ? "No data" : publisher)));
+  vbox->addWidget(new Label(Label::ExtraSmall, "<b>Publisher:</b> " + (publisher.isEmpty() ? t("No data") : publisher)));
 
   vbox->addStretch(1);
 
   N3ButtonLabel *button = construct_N3ButtonLabel(this);
-  button->setText("Select edition");
+  button->setText(t("Select edition"));
   button->setProperty("borderedButton", true);
   hbox->addWidget(button);
   QObject::connect(button, SIGNAL(tapped(bool)), this, SLOT(tapped()));
 
   QList<QPair<QString, QString>> list = {
-      {"Type", json.value("reading_format").toString()},
-      {"Format", json.value("edition_format").toString()},
-      {"Information", json.value("edition_information").toString()},
-      {"Pages", QString::number(json.value("pages").toInt())},
-      {"Release Date", json.value("release_date").toString()},
-      {"ISBN 10", json.value("isbn_10").toString()},
-      {"ISBN 13", json.value("isbn_13").toString()},
+      {t("Type"), json.value("reading_format").toString()},
+      {t("Format"), json.value("edition_format").toString()},
+      {t("Information"), json.value("edition_information").toString()},
+      {t("Pages"), QString::number(json.value("pages").toInt())},
+      {t("Release Date"), json.value("release_date").toString()},
+      {t("ISBN 10"), json.value("isbn_10").toString()},
+      {t("ISBN 13"), json.value("isbn_13").toString()},
       {"ASIN", json.value("asin").toString()},
-      {"Data Score", QString::number(json.value("score").toInt())},
-      {"Language", json.value("language").toString()},
-      {"Country", json.value("country").toString()},
-      {"Readers", QString::number(json.value("users_count").toInt())},
+      {t("Data Score"), QString::number(json.value("score").toInt())},
+      {t("Language"), json.value("language").toString()},
+      {t("Country"), json.value("country").toString()},
+      {t("Readers"), QString::number(json.value("users_count").toInt())},
   };
 
   for (int i = 0; i < list.size(); i++) {
     QString text = QString("<b>%1:</b><br>%2")
                        .arg(list[i].first)
-                       .arg(list[i].second.isEmpty() || list[i].second == "0" ? "No data" : list[i].second);
+                       .arg(list[i].second.isEmpty() || list[i].second == "0" ? t("No data") : list[i].second);
     layout->addWidget(new Label(Label::ExtraSmall, text), i / 4 + 1, i % 4);
   }
 }

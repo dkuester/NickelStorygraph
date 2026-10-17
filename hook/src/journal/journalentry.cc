@@ -9,6 +9,7 @@
 #include "../files.h"
 #include "../widgets/elidedlabel.h"
 #include "journalentry.h"
+#include "../translations.h"
 
 JournalEntry::JournalEntry(QJsonObject doc, QWidget *parent) : QFrame(parent) {
   setStyleSheet(R"(
@@ -53,40 +54,40 @@ JournalEntry::JournalEntry(QJsonObject doc, QWidget *parent) : QFrame(parent) {
 
   if (event == "status_want_to_read") {
     icon->setPixmap(QPixmap(Files::status_want_to_read));
-    label->setText("Saved as Want To Read");
+    label->setText(t("Saved as Want To Read"));
   } else if (event == "status_read") {
     icon->setPixmap(QPixmap(Files::status_read));
-    label->setText("Marked as Read");
+    label->setText(t("Marked as Read"));
   } else if (event == "user_book_read_started") {
     icon->setPixmap(QPixmap(Files::user_book_read_started));
-    label->setText("Started reading");
+    label->setText(t("Started reading"));
   } else if (event == "user_book_read_finished") {
     icon->setPixmap(QPixmap(Files::user_book_read_finished));
-    label->setText("Finished reading");
+    label->setText(t("Finished reading"));
   } else if (event == "status_stopped") {
     icon->setPixmap(QPixmap(Files::status_stopped));
-    label->setText("Stopped reading");
+    label->setText(t("Stopped reading"));
   } else if (event == "progress_updated") {
     icon->setPixmap(QPixmap(Files::progress_updated));
     QJsonObject metadata = doc.value("metadata").toObject();
-    label->setText(QString("Updated progress from %1% → %2%")
+    label->setText(QString(t("Updated progress from %1% → %2%"))
                        .arg(metadata.value("progress_was").toInt())
                        .arg(metadata.value("progress").toInt()));
   } else if (event == "rated") {
     icon->setPixmap(QPixmap(Files::rated));
     QJsonObject metadata = doc.value("metadata").toObject();
-    label->setText("Rated " + metadata.value("rating").toString());
+    label->setText(t("Rated ") + metadata.value("rating").toString());
   } else if (event == "list_book") {
     icon->setPixmap(QPixmap(Files::list_book));
     QJsonObject metadata = doc.value("metadata").toObject();
-    label->setText(QString("Added to list <i>%1</i>").arg(metadata.value("list_name").toString()));
+    label->setText(QString(t("Added to list <i>%1</i>")).arg(metadata.value("list_name").toString()));
   } else if (event == "prompt_book") {
     icon->setPixmap(QPixmap(Files::prompt_book));
     QJsonObject metadata = doc.value("metadata").toObject();
-    label->setText(QString("Answered prompt <i>%1</i>").arg(metadata.value("prompt").toString()));
+    label->setText(QString(t("Answered prompt <i>%1</i>")).arg(metadata.value("prompt").toString()));
   } else if (event == "note") {
     icon->setPixmap(QPixmap(Files::note));
-    label->setText("Saved a Note");
+    label->setText(t("Saved a Note"));
 
     QString quoteText = doc.value("metadata").toObject().value("quote").toString();
     if (!quoteText.isEmpty()) {
@@ -100,7 +101,7 @@ JournalEntry::JournalEntry(QJsonObject doc, QWidget *parent) : QFrame(parent) {
     entryShown = true;
   } else if (event == "quote") {
     icon->setPixmap(QPixmap(Files::quote));
-    label->setText("Saved a Quote");
+    label->setText(t("Saved a Quote"));
 
     ElidedLabel *quoteLabel = new ElidedLabel(Label::Medium, doc.value("entry").toString(), 5, this);
     QFont italicFont = quoteLabel->font();
@@ -110,13 +111,13 @@ JournalEntry::JournalEntry(QJsonObject doc, QWidget *parent) : QFrame(parent) {
     entryShown = true;
   } else if (event == "reviewed") {
     icon->setPixmap(QPixmap(Files::reviewed));
-    label->setText("Reviewed");
+    label->setText(t("Reviewed"));
 
     QJsonObject metadata = doc.value("metadata").toObject();
     layout->addWidget(new ElidedLabel(Label::Medium, metadata.value("review").toString(), 5, this));
     entryShown = true;
   } else {
-    label->setText("Unknown journal type " + event);
+    label->setText(t("Unknown journal type ") + event);
   }
 
   if (!entryShown) {

@@ -10,20 +10,21 @@
 #include "../settings.h"
 #include "../synccontroller.h"
 #include "insertjournaldialog.h"
+#include "../translations.h"
 
 void InsertJournalDialog::show() { new InsertJournalDialog(); }
 
-InsertJournalDialog::InsertJournalDialog() : Dialog("Add New Journal Entry") {
+InsertJournalDialog::InsertJournalDialog() : Dialog(t("Add New Journal Entry")) {
   QVBoxLayout *layout = new QVBoxLayout(this);
 
   // StoryGraph does not expose per-entry privacy via its web API.
 
   TouchTextEdit *touchText = construct_TouchTextEdit(this);
-  TouchTextEdit__setCustomPlaceholderText(touchText, "Write a new note...");
+  TouchTextEdit__setCustomPlaceholderText(touchText, t("Write a new note..."));
   layout->addWidget(touchText);
 
   QTextEdit *textEdit = touchText->findChild<QTextEdit *>();
-  buildKeyboardFrame(textEdit, "Submit");
+  buildKeyboardFrame(textEdit, t("Submit"));
   showKeyboard();
 }
 

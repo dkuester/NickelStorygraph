@@ -10,11 +10,12 @@
 #include "goalsdialog.h"
 #include "goalsrow.h"
 #include "streaksummary.h"
+#include "../translations.h"
 
 void GoalsDialog::show() { new GoalsDialog(); }
 
 GoalsDialog::GoalsDialog() : HomePanel("") {
-  statusLabel = new QLabel("Loading...");
+  statusLabel = new QLabel(t("Loading..."));
   statusLabel->setAlignment(Qt::AlignCenter);
   contentLayout->addWidget(statusLabel, 1);
 
@@ -42,7 +43,7 @@ void GoalsDialog::response(QJsonObject doc) {
   int        booksRead = doc.value("books_read").toInt();
 
   if (goals.isEmpty()) {
-    statusLabel->setText("No reading goals set for this year.");
+    statusLabel->setText(t("No reading goals set for this year."));
     return;
   }
 
@@ -72,7 +73,7 @@ void GoalsDialog::response(QJsonObject doc) {
 }
 
 void GoalsDialog::failed() {
-  statusLabel->setText("Failed to load reading goals.");
+  statusLabel->setText(t("Failed to load reading goals."));
 }
 
 void GoalsDialog::streakResponse(QJsonObject doc) {
@@ -87,8 +88,8 @@ void GoalsDialog::streakResponse(QJsonObject doc) {
 
   contentLayout->addSpacing(10);
 
-  // Large centered "Reading Streak" title, matching the "<year> Reading Goals" heading
-  Label *heading = new Label(Label::ExtraLarge, "Reading Streak", this);
+  // Large centered t("Reading Streak") title, matching the t("<year> Reading Goals") heading
+  Label *heading = new Label(Label::ExtraLarge, t("Reading Streak"), this);
   heading->setAlignment(Qt::AlignCenter);
   heading->setStyleSheet(Label::Stylesheet + QStringLiteral("\n[textSize=\"ExtraLarge\"] { font-weight: bold; padding-top: 16px; padding-bottom: 4px; }"));
   contentLayout->addWidget(heading);

@@ -8,10 +8,11 @@
 #include "../insertjournal/insertjournaldialog.h"
 #include "journaldialog.h"
 #include "journalentry.h"
+#include "../translations.h"
 
 void JournalDialog::show() { new JournalDialog(); }
 
-JournalDialog::JournalDialog() : Dialog("Reading Journal") {
+JournalDialog::JournalDialog() : Dialog(t("Reading Journal")) {
   setStyleSheet(R"(
     [qApp_deviceIsTrilogy=true] QStackedWidget {
       margin: 0 12px;
@@ -41,7 +42,7 @@ JournalDialog::JournalDialog() : Dialog("Reading Journal") {
 
   N3ButtonLabel *button = construct_N3ButtonLabel(this);
   button->setProperty("primaryButton", true);
-  button->setText("Annotations");
+  button->setText(t("Annotations"));
   hbox->addWidget(button, 0);
   QObject::connect(button, SIGNAL(tapped(bool)), this, SLOT(annotations()));
 

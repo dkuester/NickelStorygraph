@@ -6,6 +6,7 @@
 #include "../widgets/elidedlabel.h"
 #include "../widgets/label.h"
 #include "goalsrow.h"
+#include "../translations.h"
 
 GoalsRow::GoalsRow(QJsonObject json, QWidget *parent) : QFrame(parent) {
   setStyleSheet(R"(
@@ -35,9 +36,9 @@ GoalsRow::GoalsRow(QJsonObject json, QWidget *parent) : QFrame(parent) {
 
   // Map label to StoryGraph's own brand colors
   QString color;
-  if (label == "Books")      color = "#0E7490";
-  else if (label == "Pages") color = "#8B08BB";
-  else if (label == "Hours") color = "#BF5600";
+  if (label == t("Books"))      color = "#0E7490";
+  else if (label == t("Pages")) color = "#8B08BB";
+  else if (label == t("Hours")) color = "#BF5600";
   else                       color = "#1FB784";
 
   QVBoxLayout *layout = new QVBoxLayout(this);

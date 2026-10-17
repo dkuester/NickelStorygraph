@@ -11,10 +11,11 @@
 #include "../settings.h"
 #include "bookrow.h"
 #include "searchdialog.h"
+#include "../translations.h"
 
 void SearchDialog::show(QString contentId, QString query) { new SearchDialog(contentId, query); }
 
-SearchDialog::SearchDialog(QString contentId, QString query) : Dialog("Manually link book"), contentId(contentId) {
+SearchDialog::SearchDialog(QString contentId, QString query) : Dialog(t("Manually link book")), contentId(contentId) {
   setStyleSheet(R"(
     [qApp_deviceIsTrilogy=true] TouchLineEdit {
       margin: 0 20px;
@@ -64,7 +65,7 @@ SearchDialog::SearchDialog(QString contentId, QString query) : Dialog("Manually 
   QObject::connect(pages, &PagedStack::requestPage, this, &SearchDialog::requestPage);
   QObject::connect(pages, &PagedStack::afterLayout, this, &SearchDialog::commit);
 
-  buildKeyboardFrame(lineEdit, "Search");
+  buildKeyboardFrame(lineEdit, t("Search"));
 }
 
 void SearchDialog::commit() {
@@ -90,7 +91,7 @@ void SearchDialog::response(QJsonObject doc) {
   int length = resultsArray.size();
 
   if (length < 1) {
-    pages->setStatusText("No results found.");
+    pages->setStatusText(t("No results found."));
     return;
   }
 
