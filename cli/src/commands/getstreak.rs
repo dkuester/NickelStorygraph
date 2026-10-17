@@ -1,6 +1,7 @@
 use anyhow::Result;
 use argh::FromArgs;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::VERSION;
@@ -13,6 +14,6 @@ pub struct GetStreak {}
 pub fn run(_args: GetStreak) -> Result<()> {
   log!("{} get-streak", &*VERSION);
   let streak = storygraph::get_streak()?;
-  log!("BEGIN_JSON\n{}", serde_json::to_string(&streak).unwrap());
+  emit_json!("{}", serde_json::to_string(&streak).unwrap());
   Ok(())
 }

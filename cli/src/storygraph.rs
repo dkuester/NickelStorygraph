@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use crate::config::CONFIG;
 use crate::debug_log;
+use crate::utils::UserError;
 
 pub const BASE_URL: &str = "https://app.thestorygraph.com";
 
@@ -140,11 +141,13 @@ fn client() -> Result<&'static Client> {
 
 // ── Guards ────────────────────────────────────────────────────────────────────
 
-fn assert_credentials() {
-  assert!(
-    !CONFIG.session_cookie.is_empty(),
-    "Please set <i>session_cookie</i> in <i>.adds/NickelStorygraph/config.ini</i>. Obtain it from browser DevTools → Application → Cookies → app.thestorygraph.com."
-  );
+fn require_credentials() -> Result<()> {
+  if CONFIG.session_cookie.is_empty() {
+    return Err(UserError(
+      "Please set <i>session_cookie</i> in <i>.adds/NickelStorygraph/config.ini</i>. Obtain it from browser DevTools → Application → Cookies → app.thestorygraph.com.".to_owned(),
+    ).into());
+  }
+  Ok(())
 }
 
 /// Returns Err if the final response URL ended up on the sign-in page.
@@ -305,35 +308,89 @@ fn hidden_value(html: &str, name: &str) -> String {
     .unwrap_or_default()
 }
 
-fn parse_status_text(text: &str) -> Option<u8> {
-  let lower = text.to_lowercase();
-  if lower.contains("rereading") {
-    Some(6)
-  } else if lower.contains("currently reading") {
-    Some(2)
-  } else if lower.contains("to-read") || lower.contains("to read") {
-    Some(1)
-  } else if lower.contains("paused") {
-    Some(4)
-  } else if lower.contains("did not finish") {
-    Some(5)
-  } else if lower.trim() == "read" || lower.ends_with(" read") || lower.starts_with("read ") {
-    Some(3)
-  } else {
-    None
+/// Parses a `style="...width: N%"` attribute value into a rounded percentage.
+fn percent_from_style(style: &str) -> Option<u32> {
+  let i = style.find("width:")?;
+  let after = style[i + 6..].trim_start();
+  let end = after.find('%')?;
+  after[..end].trim().parse::<f32>().ok().map(|f| f.round() as u32)
+}
+
+/// Extracts the progress percentage from the `edit-progress` progress bar's
+/// inline `width` style. StoryGraph renders this bar for both page- and
+/// time-tracked books, unlike the hidden percent input which only exists for
+/// page-tracked books.
+fn progress_percent_from_edit_progress(html: &str) -> Option<u32> {
+  let i = html.find("edit-progress")?;
+  percent_from_style(&html[i..])
+}
+
+/// StoryGraph's internal reading-status IDs (stable across the site).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum ReadingStatus {
+  ToRead = 1,
+  CurrentlyReading = 2,
+  Read = 3,
+  Paused = 4,
+  DidNotFinish = 5,
+  Rereading = 6,
+}
+
+impl ReadingStatus {
+  pub fn from_id(id: u8) -> Option<Self> {
+    match id {
+      1 => Some(Self::ToRead),
+      2 => Some(Self::CurrentlyReading),
+      3 => Some(Self::Read),
+      4 => Some(Self::Paused),
+      5 => Some(Self::DidNotFinish),
+      6 => Some(Self::Rereading),
+      _ => None,
+    }
+  }
+
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::ToRead => "to-read",
+      Self::CurrentlyReading => "currently-reading",
+      Self::Read => "read",
+      Self::Paused => "paused",
+      Self::DidNotFinish => "did-not-finish",
+      Self::Rereading => "rereading",
+    }
+  }
+
+  pub fn parse(text: &str) -> Option<Self> {
+    let lower = text.to_lowercase();
+    if lower.contains("rereading") {
+      Some(Self::Rereading)
+    } else if lower.contains("currently reading") {
+      Some(Self::CurrentlyReading)
+    } else if lower.contains("to-read") || lower.contains("to read") {
+      Some(Self::ToRead)
+    } else if lower.contains("paused") {
+      Some(Self::Paused)
+    } else if lower.contains("did not finish") {
+      Some(Self::DidNotFinish)
+    } else if lower.trim() == "read" || lower.ends_with(" read") || lower.starts_with("read ") {
+      Some(Self::Read)
+    } else {
+      None
+    }
   }
 }
 
+/// StoryGraph's reading-format filter values for the editions page.
+pub const READING_FORMAT_PRINT: i32 = 1;
+pub const READING_FORMAT_EBOOK: i32 = 4;
+
+fn parse_status_text(text: &str) -> Option<u8> {
+  ReadingStatus::parse(text).map(|s| s as u8)
+}
+
 fn status_to_str(status_id: u8) -> &'static str {
-  match status_id {
-    1 => "to-read",
-    2 => "currently-reading",
-    3 => "read",
-    4 => "paused",
-    5 => "did-not-finish",
-    6 => "rereading",
-    _ => "currently-reading",
-  }
+  ReadingStatus::from_id(status_id).map(ReadingStatus::as_str).unwrap_or("currently-reading")
 }
 
 /// Fetch /books/:slug and extract mutable form state needed for POST calls.
@@ -370,7 +427,7 @@ pub struct ReadingGoals {
 
 /// Fetches the user's reading goals from `/reading_challenges/dashboard/{slug}`.
 pub fn get_goals() -> Result<ReadingGoals> {
-  assert_credentials();
+  require_credentials()?;
   let user = get_user()?;
   let html = get(&format!("/reading_challenges/dashboard/{}", user.slug))?;
   let doc = Html::parse_document(&html);
@@ -431,13 +488,7 @@ pub fn get_goals() -> Result<ReadingGoals> {
   let fill_sel = Selector::parse(r#"div[style*="width:"]"#).expect("valid");
   let percents: Vec<u32> = doc
     .select(&fill_sel)
-    .filter_map(|el| {
-      let style = el.value().attr("style")?;
-      let i = style.find("width:")?;
-      let after = style[i + 6..].trim_start();
-      let end = after.find('%')?;
-      after[..end].trim().parse().ok()
-    })
+    .filter_map(|el| el.value().attr("style").and_then(percent_from_style))
     .collect();
 
   // Status messages from italic mobile divs (shorter single-line versions)
@@ -493,7 +544,7 @@ pub struct Streak {
 
 /// Fetches the user's reading streak from `/streak/{slug}`.
 pub fn get_streak() -> Result<Streak> {
-  assert_credentials();
+  require_credentials()?;
   let user = get_user()?;
   let html = get(&format!("/streak/{}", user.slug))?;
   let doc = Html::parse_document(&html);
@@ -591,7 +642,7 @@ pub struct FeedItem {
 /// Fetches the community activity feed from `/community`.
 /// Items live inside `.news-feed-item-panes` as `[data-news-feed-item-id]` elements.
 pub fn get_feed() -> Result<Vec<FeedItem>> {
-  assert_credentials();
+  require_credentials()?;
   let html = get("/community")?;
   let doc = Html::parse_document(&html);
 
@@ -732,15 +783,7 @@ fn scrape_shelf_section(doc: &Html, container_selector: &str, status: &str) -> V
       // are tracked by time on StoryGraph and don't render the hidden percent input at
       // all, so that selector alone silently reads back 0 for them.
       let pane_html = pane.html();
-      let progress: u32 = pane_html
-        .find("edit-progress")
-        .and_then(|i| {
-          let s = &pane_html[i..];
-          let w = s.find("width:")?;
-          let pct = s[w + 6..].trim_start();
-          let end = pct.find('%')?;
-          pct[..end].trim().parse::<u32>().ok()
-        })
+      let progress: u32 = progress_percent_from_edit_progress(&pane_html)
         .or_else(|| {
           pane
             .select(&progress_sel)
@@ -794,7 +837,7 @@ fn scrape_shelf_section(doc: &Html, container_selector: &str, status: &str) -> V
 ///   .read-books         → currently reading
 ///   .paused-books-panes → paused
 pub fn list_reading() -> Result<Vec<ReadingBook>> {
-  assert_credentials();
+  require_credentials()?;
   let user = get_user()?;
   let html = get(&format!("/currently-reading/{}", user.slug))?;
   let doc = Html::parse_document(&html);
@@ -809,7 +852,7 @@ pub fn list_reading() -> Result<Vec<ReadingBook>> {
 /// Returns the logged-in user's slug. Uses `user_slug` from config if set,
 /// otherwise scrapes the homepage nav for a `/users/` profile link.
 pub fn get_user() -> Result<User> {
-  assert_credentials();
+  require_credentials()?;
 
   if !CONFIG.user_slug.is_empty() {
     return Ok(User { username: CONFIG.user_slug.clone(), slug: CONFIG.user_slug.clone() });
@@ -836,7 +879,7 @@ pub fn get_user() -> Result<User> {
 /// Audio editions are filtered out. Cover URLs are not populated (StoryGraph
 /// serves covers from a CDN that requires a separate request).
 pub fn search(query: &str) -> Result<Vec<Book>> {
-  assert_credentials();
+  require_credentials()?;
   let html = get(&format!("/browse?search_term={}", urlencoding::encode(query)))?;
   let doc = Html::parse_document(&html);
 
@@ -911,7 +954,7 @@ pub fn find_by_isbn(isbn: &str) -> Result<Option<Book>> {
 /// Returns zeroed progress fields if the book has no page count on StoryGraph
 /// (common for Kindle/digital editions).
 pub fn get_user_book(book_id: &str) -> Result<UserBook> {
-  assert_credentials();
+  require_credentials()?;
   let html = get(&format!("/books/{book_id}"))?;
   parse_user_book(book_id, &html)
 }
@@ -923,15 +966,7 @@ fn parse_user_book(book_id: &str, html: &str) -> Result<UserBook> {
   let status_id = parse_status_text(&status_text);
 
   // Try progress bar width first (most reliable), then hidden inputs.
-  let progress_percent = html
-    .find("edit-progress")
-    .and_then(|i| {
-      let s = &html[i..];
-      let w = s.find("width:")?;
-      let pct = s[w + 6..].trim_start();
-      let end = pct.find('%')?;
-      pct[..end].trim().parse::<u32>().ok()
-    })
+  let progress_percent = progress_percent_from_edit_progress(html)
     .unwrap_or_else(|| hidden_value(html, "read_status[last_reached_percent]").parse().unwrap_or(0));
 
   let progress_pages: u32 = hidden_value(html, "read_status[last_reached_pages]")
@@ -977,7 +1012,7 @@ fn parse_user_book(book_id: &str, html: &str) -> Result<UserBook> {
 /// Sets the reading status of a book (to-read, reading, read, paused, dnf).
 /// POSTs to `/update-status.js` and re-fetches the book page to confirm.
 pub fn update_status(book_id: &str, status_id: u8) -> Result<UserBook> {
-  assert_credentials();
+  require_credentials()?;
   let (_html, data) = fetch_page_data(book_id)?;
   let status_str = status_to_str(status_id);
 
@@ -998,16 +1033,16 @@ pub fn update_status(book_id: &str, status_id: u8) -> Result<UserBook> {
 /// Fetches the book page first to extract the CSRF token and current page count.
 /// If the book has no reading status, automatically sets it to "Currently Reading" first.
 pub fn update_progress(book_id: &str, progress_type: &str, value: u32) -> Result<UserBook> {
-  assert_credentials();
+  require_credentials()?;
   let (html, mut data) = fetch_page_data(book_id)?;
 
   let current_status = parse_user_book(book_id, &html)?.status_id;
   if current_status.is_none() {
-    update_status(book_id, 2)?;
+    update_status(book_id, ReadingStatus::CurrentlyReading as u8)?;
     let (_, fresh) = fetch_page_data(book_id)?;
     data = fresh;
-  } else if current_status == Some(3) {
-    update_status(book_id, 6)?;
+  } else if current_status == Some(ReadingStatus::Read as u8) {
+    update_status(book_id, ReadingStatus::Rereading as u8)?;
     let (_, fresh) = fetch_page_data(book_id)?;
     data = fresh;
   }
@@ -1029,7 +1064,7 @@ pub fn update_progress(book_id: &str, progress_type: &str, value: u32) -> Result
 /// Creates a reading journal entry (note + progress snapshot) via `/update-progress-with-note`.
 /// StoryGraph records this as a progress update with an attached note in the reading journal.
 pub fn insert_journal(book_id: &str, note: &str, progress: u32, progress_type: &str) -> Result<()> {
-  assert_credentials();
+  require_credentials()?;
   let (_html, data) = fetch_page_data(book_id)?;
   let progress_str = progress.to_string();
 
@@ -1073,7 +1108,7 @@ pub fn submit_review(
   diverse_characters: &str,
   flawed_characters: &str,
 ) -> Result<()> {
-  assert_credentials();
+  require_credentials()?;
 
   let book_uuid = book_id;
 
@@ -1129,7 +1164,7 @@ pub fn submit_review(
 /// Used by the hook's edition picker so the user can switch to the correct
 /// physical or digital edition for accurate page tracking.
 pub fn list_editions(book_id: &str, reading_format: i32, language: &str) -> Result<Vec<Edition>> {
-  assert_credentials();
+  require_credentials()?;
   let html = get(&format!("/books/{book_id}/editions"))?;
   let doc = Html::parse_document(&html);
 
@@ -1247,10 +1282,12 @@ pub fn list_editions(book_id: &str, reading_format: i32, language: &str) -> Resu
 
   let editions: Vec<Edition> = editions
     .into_iter()
-    .filter(|e| match reading_format {
-      1 => !is_digital(&e.format), // Print
-      4 => is_digital(&e.format),  // E-Book
-      _ => true,                   // All
+    .filter(|e| if reading_format == READING_FORMAT_PRINT {
+      !is_digital(&e.format)
+    } else if reading_format == READING_FORMAT_EBOOK {
+      is_digital(&e.format)
+    } else {
+      true
     })
     .filter(|e| language.is_empty() || e.language.eq_ignore_ascii_case(language))
     .collect();
@@ -1289,7 +1326,7 @@ pub fn title_match_score(query_title: &str, result_title: &str) -> f32 {
 /// for the best title match (score ≥ 0.9 - deliberately strict, see below), or `None`
 /// if nothing matches.
 pub fn find_on_shelf(query_title: &str) -> Result<Option<(String, u32)>> {
-  assert_credentials();
+  require_credentials()?;
   let user = get_user()?;
   let html = get(&format!("/currently-reading/{}", user.slug))?;
   let doc = Html::parse_document(&html);
@@ -1329,15 +1366,7 @@ pub fn find_on_shelf(query_title: &str) -> Result<Option<(String, u32)>> {
       // input at all, so that selector alone silently reads back 0 for them.
       // The rendered progress bar's width is present regardless of tracking
       // method and is what the site itself shows the user.
-      let progress: u32 = pane_html
-        .find("edit-progress")
-        .and_then(|i| {
-          let s = &pane_html[i..];
-          let w = s.find("width:")?;
-          let pct = s[w + 6..].trim_start();
-          let end = pct.find('%')?;
-          pct[..end].trim().parse::<u32>().ok()
-        })
+      let progress: u32 = progress_percent_from_edit_progress(&pane_html)
         .or_else(|| {
           pane
             .select(&progress_sel)
@@ -1361,7 +1390,7 @@ pub fn find_on_shelf(query_title: &str) -> Result<Option<(String, u32)>> {
 /// currently-reading shelf. Fetches the shelf page and looks for any edition UUID
 /// that matches a known edition of the same work.
 pub fn find_current_edition(book_id: &str) -> Result<String> {
-  assert_credentials();
+  require_credentials()?;
 
   let editions = list_editions(book_id, 0, "")?;
   let user = get_user()?;
@@ -1385,7 +1414,7 @@ pub fn find_current_edition(book_id: &str) -> Result<String> {
 /// If `book_id` is not a digital edition, returns the book_id of a digital edition
 /// of the same work. Falls back to the original book_id if no digital edition is found.
 pub fn prefer_digital_edition(book_id: &str) -> Result<String> {
-  assert_credentials();
+  require_credentials()?;
   let html = get(&format!("/books/{book_id}"))?;
   let user_book = parse_user_book(book_id, &html)?;
 
@@ -1406,7 +1435,7 @@ pub fn prefer_digital_edition(book_id: &str) -> Result<String> {
 /// Finds the switch form on the editions page and POSTs it, so StoryGraph
 /// transfers reading progress to the new edition.
 pub fn switch_edition(from_id: &str, to_id: &str) -> Result<bool> {
-  assert_credentials();
+  require_credentials()?;
   let html = get(&format!("/books/{from_id}/editions"))?;
   let doc = Html::parse_document(&html);
   let csrf = csrf_token(&html).context("Could not find CSRF token on editions page")?;
@@ -1453,7 +1482,7 @@ pub fn switch_edition(from_id: &str, to_id: &str) -> Result<bool> {
 /// StoryGraph uses UUIDs (not slugs) in /books/ URLs, so book_id is already the UUID
 /// that the journal endpoint expects.
 pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<JournalActivity>> {
-  assert_credentials();
+  require_credentials()?;
 
   let html = get(&format!("/journal?book_id={book_id}"))?;
   let doc = Html::parse_document(&html);
@@ -1509,13 +1538,7 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
       .select(&progress_sel)
       .next()
       .and_then(|div| div.value().attr("style"))
-      .and_then(|style| {
-        let i = style.find("width:")?;
-        let after = style[i + 6..].trim_start();
-        let end = after.find('%')?;
-        after[..end].trim().parse::<f32>().ok()
-      })
-      .map(|f| f.round() as u32)
+      .and_then(percent_from_style)
       .unwrap_or(0);
 
     // Text content from the inner trix editor div.
@@ -1682,3 +1705,77 @@ pub fn login(email: &str, password: &str) -> Result<LoginResult> {
 
   Ok(LoginResult { session_cookie, remember_user_token })
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn title_match_score_identical_is_one() {
+    assert!((title_match_score("The Great Gatsby", "The Great Gatsby") - 1.0).abs() < f32::EPSILON);
+  }
+
+  #[test]
+  fn title_match_score_empty_query_is_zero() {
+    assert_eq!(title_match_score("", "anything"), 0.0);
+  }
+
+  #[test]
+  fn title_match_score_volume_differs() {
+    // "Vol. 1" vs "Vol. 2" must not score as identical (3/4 words match).
+    let s = title_match_score("Harry Potter Vol. 1", "Harry Potter Vol. 2");
+    assert!((s - 0.75).abs() < f32::EPSILON, "got {s}");
+  }
+
+  #[test]
+  fn parse_status_text_cases() {
+    assert_eq!(parse_status_text("Currently reading"), Some(2));
+    assert_eq!(parse_status_text("Rereading"), Some(6));
+    assert_eq!(parse_status_text("Want to Read"), Some(1));
+    assert_eq!(parse_status_text("To-read"), Some(1));
+    assert_eq!(parse_status_text("Paused"), Some(4));
+    assert_eq!(parse_status_text("Did not finish"), Some(5));
+    assert_eq!(parse_status_text("Read"), Some(3));
+    assert_eq!(parse_status_text("banana"), None);
+  }
+
+  #[test]
+  fn status_to_str_roundtrip() {
+    assert_eq!(status_to_str(1), "to-read");
+    assert_eq!(status_to_str(2), "currently-reading");
+    assert_eq!(status_to_str(3), "read");
+    assert_eq!(status_to_str(4), "paused");
+    assert_eq!(status_to_str(5), "did-not-finish");
+    assert_eq!(status_to_str(6), "rereading");
+    assert_eq!(status_to_str(99), "currently-reading"); // unknown falls back
+  }
+
+  #[test]
+  fn parse_storygraph_date_full_english_month() {
+    assert_eq!(parse_storygraph_date("17 October 2026"), "2026-10-17T12:00:00Z");
+    assert_eq!(parse_storygraph_date("1 January 2024"), "2024-01-01T12:00:00Z");
+  }
+
+  #[test]
+  fn parse_storygraph_date_garbage_passthrough() {
+    assert_eq!(parse_storygraph_date("some day ago"), "some day ago");
+  }
+
+  #[test]
+  fn percent_from_style_parses_width() {
+    assert_eq!(percent_from_style("width: 47%"), Some(47));
+    assert_eq!(percent_from_style("width:47.5%"), Some(48)); // rounds
+    assert_eq!(percent_from_style("width: 100%;"), Some(100));
+    assert_eq!(percent_from_style("color: red"), None);
+  }
+
+  #[test]
+  fn progress_percent_from_edit_progress_finds_bar() {
+    assert_eq!(
+      progress_percent_from_edit_progress("<div class='edit-progress' style='width: 33%'></div>"),
+      Some(33)
+    );
+    assert_eq!(progress_percent_from_edit_progress("no bar here"), None);
+  }
+}
+

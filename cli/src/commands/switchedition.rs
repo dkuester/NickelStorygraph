@@ -2,6 +2,7 @@ use anyhow::Result;
 use argh::FromArgs;
 use serde_json::json;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::VERSION;
@@ -22,6 +23,6 @@ pub struct SwitchEdition {
 pub fn run(args: SwitchEdition) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
   storygraph::switch_edition(&args.from_id, &args.to_id)?;
-  log!("BEGIN_JSON\n{}", json!({ "success": true }));
+  emit_json!("{}", json!({ "success": true }));
   Ok(())
 }

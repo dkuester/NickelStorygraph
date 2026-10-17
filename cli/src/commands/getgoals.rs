@@ -1,6 +1,7 @@
 use anyhow::Result;
 use argh::FromArgs;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::VERSION;
@@ -13,6 +14,6 @@ pub struct GetGoals {}
 pub fn run(_args: GetGoals) -> Result<()> {
   log!("{} get-goals", &*VERSION);
   let goals = storygraph::get_goals()?;
-  log!("BEGIN_JSON\n{}", serde_json::to_string(&goals).unwrap());
+  emit_json!("{}", serde_json::to_string(&goals).unwrap());
   Ok(())
 }

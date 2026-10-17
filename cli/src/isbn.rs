@@ -366,3 +366,42 @@ pub fn get_isbn(content_id: &str) -> Vec<String> {
     )),
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn isbn13_check_digit_known_values() {
+    assert_eq!(isbn_13_check_digit(&[9, 7, 8, 0, 3, 0, 6, 4, 0, 6, 1, 5]), 7);
+    assert_eq!(isbn_10_check_digit(&[0, 3, 0, 6, 4, 0, 6, 1, 5]), 2);
+  }
+
+  #[test]
+  fn normalize_isbn13_returns_10_equivalent() {
+    assert_eq!(
+      normalize_isbn("9780306406157"),
+      Some(vec!["9780306406157".to_string(), "0306406152".to_string()])
+    );
+    assert_eq!(
+      normalize_isbn("9780131103627"),
+      Some(vec!["9780131103627".to_string(), "0131103628".to_string()])
+    );
+  }
+
+  #[test]
+  fn normalize_isbn10_returns_13_equivalent() {
+    assert_eq!(
+      normalize_isbn("0-306-40615-2"),
+      Some(vec!["0306406152".to_string(), "9780306406157".to_string()])
+    );
+  }
+
+  #[test]
+  fn normalize_isbn_rejects_invalid() {
+    assert_eq!(normalize_isbn("9780306406158"), None); // bad check digit
+    assert_eq!(normalize_isbn("1234567890"), None);    // invalid ISBN-10 check
+    assert_eq!(normalize_isbn("notanisbn"), None);
+  }
+}
+

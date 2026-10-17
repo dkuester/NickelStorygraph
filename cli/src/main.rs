@@ -6,7 +6,7 @@ use crate::commands::listeditions;
 use crate::commands::listreading;
 use crate::commands::{getfeed, getgoals, getstreak, getuser, getuserbook, insertjournal, listjournal, login, search, setuserbook, switchedition, syncedition, update, updatejournal};
 use crate::config::CONFIG;
-use crate::utils::{VERSION, write_logfile};
+use crate::utils::{UserError, VERSION, write_logfile};
 
 mod commands;
 mod storygraph;
@@ -68,10 +68,12 @@ fn main() {
     return;
   }
 
-  let res = match args
-    .command
-    .expect("A subcommand must be present. Run with --help for more information.")
-  {
+  let Some(command) = args.command else {
+    eprintln!("A subcommand must be present. Run with --help for more information.");
+    std::process::exit(2);
+  };
+
+  let res = match command {
     Commands::GetFeed(args) => getfeed::run(args),
     Commands::GetGoals(args) => getgoals::run(args),
     Commands::GetStreak(args) => getstreak::run(args),
@@ -92,13 +94,29 @@ fn main() {
   };
 
   if let Err(e) = res {
-    panic!(
-      "Encountered an unexpected error. Please report this.<br><br>{:#}",
-      e.chain().join("<br>> ")
-    );
+    report_error(e);
+    std::process::exit(1);
   }
 
   if CONFIG.debug {
     write_logfile();
   }
+}
+
+/// Prints the error to stderr (the channel the hook reads for user-facing
+/// messages) and writes the session log. `UserError`s are already phrased for
+/// the user and are printed verbatim; everything else gets the generic
+/// "unexpected error" wrapper.
+fn report_error(e: anyhow::Error) {
+  if let Some(u) = e.downcast_ref::<UserError>() {
+    eprintln!("{}", u.0);
+  } else {
+    eprintln!(
+      "Encountered an unexpected error. Please report this.<br><br>{:#}",
+      e.chain().join("<br>> ")
+    );
+  }
+
+  debug_log!("{e:#}");
+  write_logfile();
 }

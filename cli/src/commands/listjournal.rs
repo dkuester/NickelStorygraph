@@ -2,6 +2,7 @@ use anyhow::Result;
 use argh::FromArgs;
 use serde_json::json;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::{VERSION, normalize_identifiers};
@@ -30,14 +31,14 @@ pub struct ListJournal {
 pub fn run(args: ListJournal) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
 
-  let (book_id, _) = normalize_identifiers(args.linked_id, args.content_id.as_deref());
+  let (book_id, _) = normalize_identifiers(args.linked_id, args.content_id.as_deref())?;
 
   if book_id.is_empty() {
-    log!("BEGIN_JSON\n{}", json!({ "reading_journals": [] }));
+    emit_json!("{}", json!({ "reading_journals": [] }));
     return Ok(());
   }
 
   let entries = storygraph::list_journal(&book_id, args.limit, args.offset)?;
-  log!("BEGIN_JSON\n{}", json!({ "reading_journals": entries }));
+  emit_json!("{}", json!({ "reading_journals": entries }));
   Ok(())
 }

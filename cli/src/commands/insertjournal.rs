@@ -2,6 +2,7 @@ use anyhow::Result;
 use argh::FromArgs;
 use serde_json::json;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::{VERSION, book_not_found, normalize_identifiers};
@@ -34,7 +35,7 @@ pub struct InsertJournal {
 pub fn run(args: InsertJournal) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
 
-  let (book_id, isbns) = normalize_identifiers(args.linked_id, args.content_id.as_deref());
+  let (book_id, isbns) = normalize_identifiers(args.linked_id, args.content_id.as_deref())?;
   let book_id = if !book_id.is_empty() {
     book_id
   } else if let Some(isbn) = isbns.first() {
@@ -46,6 +47,6 @@ pub fn run(args: InsertJournal) -> Result<()> {
   };
 
   storygraph::insert_journal(&book_id, &args.text, args.percentage, "percentage")?;
-  log!("BEGIN_JSON\n{}", json!({ "success": true }));
+  emit_json!("{}", json!({ "success": true }));
   Ok(())
 }

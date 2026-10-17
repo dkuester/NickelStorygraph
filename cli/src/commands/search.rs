@@ -2,6 +2,7 @@ use anyhow::Result;
 use argh::FromArgs;
 use serde_json::json;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::VERSION;
@@ -30,6 +31,6 @@ pub fn run(args: Search) -> Result<()> {
   books.truncate(args.limit);
 
   let total = books.len();
-  log!("BEGIN_JSON\n{}", json!({ "results": books, "total": total }));
+  emit_json!("{}", json!({ "results": books, "total": total }));
   Ok(())
 }

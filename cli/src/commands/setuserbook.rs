@@ -2,6 +2,7 @@ use anyhow::Result;
 use argh::FromArgs;
 use serde_json::json;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::{VERSION, book_not_found, normalize_identifiers};
@@ -62,7 +63,7 @@ pub struct SetUserBook {
 pub fn run(args: SetUserBook) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
 
-  let (book_id, isbns) = normalize_identifiers(args.linked_id, args.content_id.as_deref());
+  let (book_id, isbns) = normalize_identifiers(args.linked_id, args.content_id.as_deref())?;
   let book_id = if !book_id.is_empty() {
     book_id
   } else if let Some(isbn) = isbns.first() {
@@ -75,7 +76,7 @@ pub fn run(args: SetUserBook) -> Result<()> {
 
   if let Some(status_id) = args.status {
     let user_book = storygraph::update_status(&book_id, status_id)?;
-    log!("BEGIN_JSON\n{}", serde_json::to_string(&user_book)?);
+    emit_json!("{}", serde_json::to_string(&user_book)?);
   } else {
     storygraph::submit_review(
       &book_id,
@@ -89,7 +90,7 @@ pub fn run(args: SetUserBook) -> Result<()> {
       &args.diverse_characters.unwrap_or_default(),
       &args.flawed_characters.unwrap_or_default(),
     )?;
-    log!("BEGIN_JSON\n{}", json!({ "success": true }));
+    emit_json!("{}", json!({ "success": true }));
   }
 
   Ok(())

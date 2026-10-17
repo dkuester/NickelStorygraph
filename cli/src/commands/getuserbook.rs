@@ -1,6 +1,7 @@
 use anyhow::Result;
 use argh::FromArgs;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::{VERSION, book_not_found, normalize_identifiers};
@@ -21,7 +22,7 @@ pub struct GetUserBook {
 pub fn run(args: GetUserBook) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
 
-  let (book_id, isbns) = normalize_identifiers(args.linked_id, args.content_id.as_deref());
+  let (book_id, isbns) = normalize_identifiers(args.linked_id, args.content_id.as_deref())?;
 
   let book_id = if !book_id.is_empty() {
     book_id
@@ -34,6 +35,6 @@ pub fn run(args: GetUserBook) -> Result<()> {
   };
 
   let user_book = storygraph::get_user_book(&book_id)?;
-  log!("BEGIN_JSON\n{}", serde_json::to_string(&user_book)?);
+  emit_json!("{}", serde_json::to_string(&user_book)?);
   Ok(())
 }

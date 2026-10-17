@@ -8,6 +8,7 @@
 #include "qglobal.h"
 #include "review/reviewdialog.h"
 #include "settings.h"
+#include "storygraph_status.h"
 #include "syncqueue.h"
 #include "translations.h"
 
@@ -220,7 +221,7 @@ void SyncQueue::showCompletionPrompt(QString contentId) {
   QObject::connect(prompt, &QDialog::rejected, this, [this, prompt, contentId]() {
     CLI::Options options;
     options.contentId = contentId;
-    CLI::setUserBook(3, options);
+    CLI::setUserBook(StoryGraphStatusRead, options);
     prompt->deleteLater();
   });
   prompt->open();

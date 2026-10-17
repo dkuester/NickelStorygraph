@@ -4,6 +4,7 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::json;
 
 use crate::config::CONFIG;
+use crate::emit_json;
 use crate::log;
 use crate::utils::VERSION;
 
@@ -53,6 +54,6 @@ pub fn run(args: ListBookmarks) -> Result<()> {
     return Ok(());
   }
 
-  log!("BEGIN_JSON\n{}", json!({ "bookmarks": bookmarks }));
+  emit_json!("{}", json!({ "bookmarks": bookmarks }));
   Ok(())
 }

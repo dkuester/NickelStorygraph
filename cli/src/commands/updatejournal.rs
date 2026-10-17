@@ -11,6 +11,7 @@ use crate::{debug_log, log};
 use crate::config::CONFIG;
 use crate::storygraph;
 use crate::utils::{VERSION, book_not_found, normalize_identifiers};
+use crate::emit_json;
 
 /// Sync Kobo highlights and notes for a book as StoryGraph journal entries.
 #[derive(FromArgs, PartialEq, Debug)]
@@ -31,7 +32,7 @@ pub fn run(args: UpdateJournal) -> Result<()> {
   cleanup_old_sync_files();
 
   let content_id = args.content_id.clone().unwrap_or_default();
-  let (book_id, isbns) = normalize_identifiers(args.linked_id, args.content_id.as_deref());
+  let (book_id, isbns) = normalize_identifiers(args.linked_id, args.content_id.as_deref())?;
 
   let book_id = if !book_id.is_empty() {
     book_id
@@ -51,7 +52,7 @@ pub fn run(args: UpdateJournal) -> Result<()> {
 
   if count == 0 {
     debug_log!("update-journal: no new annotations");
-    log!("BEGIN_JSON\n{}", json!({ "success": true }));
+    emit_json!("{}", json!({ "success": true }));
     return Ok(());
   }
 
@@ -78,7 +79,7 @@ pub fn run(args: UpdateJournal) -> Result<()> {
     debug_log!("update-journal: failed to save sync timestamp: {e:#}");
   }
 
-  log!("BEGIN_JSON\n{}", json!({ "success": true }));
+  emit_json!("{}", json!({ "success": true }));
   Ok(())
 }
 

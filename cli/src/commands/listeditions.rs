@@ -2,6 +2,7 @@ use anyhow::Result;
 use argh::FromArgs;
 use serde_json::json;
 
+use crate::emit_json;
 use crate::log;
 use crate::storygraph;
 use crate::utils::VERSION;
@@ -26,6 +27,6 @@ pub struct ListEditions {
 pub fn run(args: ListEditions) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
   let editions = storygraph::list_editions(&args.book_id, args.reading_format, &args.language)?;
-  log!("BEGIN_JSON\n{}", json!({ "editions": editions }));
+  emit_json!("{}", json!({ "editions": editions }));
   Ok(())
 }

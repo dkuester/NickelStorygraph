@@ -4,6 +4,7 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::json;
 
 use crate::config::CONFIG;
+use crate::emit_json;
 use crate::log;
 use crate::storygraph::{self, Book, title_match_score};
 use crate::utils::{VERSION, book_not_found, normalize_identifiers};
@@ -29,7 +30,7 @@ pub fn run(args: Update) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
 
   let content_id = args.content_id.clone();
-  let (book_id, isbns) = normalize_identifiers(args.linked_id, content_id.as_deref());
+  let (book_id, isbns) = normalize_identifiers(args.linked_id, content_id.as_deref())?;
 
   let book_id = if !book_id.is_empty() {
     book_id
@@ -41,7 +42,7 @@ pub fn run(args: Update) -> Result<()> {
     // user whether to keep StoryGraph's progress or push Kobo's.
     if let Some((ref title, _)) = meta {
       if let Ok(Some((shelf_id, shelf_progress))) = storygraph::find_on_shelf(title) {
-        log!("BEGIN_JSON\n{}", serde_json::json!({
+        emit_json!("{}", serde_json::json!({
           "resolved_book_id": shelf_id,
           "needs_shelf_confirmation": true,
           "progress_percent": shelf_progress,
@@ -79,7 +80,7 @@ pub fn run(args: Update) -> Result<()> {
   let user_book = storygraph::update_progress(&book_id, "percentage", args.value)?;
   let mut resp = serde_json::to_value(&user_book)?;
   resp["resolved_book_id"] = json!(book_id);
-  log!("BEGIN_JSON\n{}", resp);
+  emit_json!("{}", resp);
   Ok(())
 }
 

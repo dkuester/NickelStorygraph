@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QObject>
@@ -16,6 +17,7 @@ public:
 
     QString contentId = QString();
     QString query = QString();
+    QByteArray stdinData = QByteArray();
 
     Options() {};
   };

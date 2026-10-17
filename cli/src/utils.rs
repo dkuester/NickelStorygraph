@@ -1,3 +1,5 @@
+use std::error::Error;
+use std::fmt;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::{LazyLock, Mutex};
@@ -10,6 +12,19 @@ use serde_json::json;
 use crate::config::CONFIG;
 use crate::isbn::get_isbn;
 
+/// An error whose message is already user-facing and should be shown to the
+/// user verbatim (without the generic "unexpected error" wrapper).
+#[derive(Debug)]
+pub struct UserError(pub String);
+
+impl fmt::Display for UserError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(&self.0)
+  }
+}
+
+impl Error for UserError {}
+
 #[allow(clippy::crate_in_macro_def)]
 #[macro_export]
 macro_rules! debug_log {
@@ -18,13 +33,26 @@ macro_rules! debug_log {
   }};
 }
 
+// `log!` writes human diagnostics to stderr and to the on-device log file.
+// stdout is reserved for machine-readable JSON (see `emit_json!`).
 #[allow(clippy::crate_in_macro_def)]
 #[macro_export]
 macro_rules! log {
   ($($t:tt)*) => {{
     let msg = format!($($t)*);
     crate::utils::debug_log_inner(&msg);
-    println!("{}", msg);
+    eprintln!("{}", msg);
+  }};
+}
+
+/// Writes a JSON document to stdout — the CLI's machine-readable channel that
+/// the hook parses. Nothing else may be written to stdout, so the hook can
+/// treat its entire content as JSON (no BEGIN_JSON sentinel required).
+#[allow(clippy::crate_in_macro_def)]
+#[macro_export]
+macro_rules! emit_json {
+  ($($t:tt)*) => {{
+    println!("{}", format!($($t)*));
   }};
 }
 
@@ -72,11 +100,11 @@ pub fn write_logfile() {
 
 /// Returns `(book_slug, isbns)`. If `linked_id` is set, returns it directly.
 /// Otherwise extracts ISBNs from the Kobo content ID (EPUB path).
-pub fn normalize_identifiers(linked_id: Option<String>, content_id: Option<&str>) -> (String, Vec<String>) {
+pub fn normalize_identifiers(linked_id: Option<String>, content_id: Option<&str>) -> Result<(String, Vec<String>)> {
   match (linked_id, content_id) {
-    (Some(id), _) if !id.is_empty() => (id, Vec::new()),
-    (_, Some(content_id)) => (String::new(), get_isbn(content_id)),
-    _ => panic!("One of --content-id or --linked-id is required"),
+    (Some(id), _) if !id.is_empty() => Ok((id, Vec::new())),
+    (_, Some(content_id)) => Ok((String::new(), get_isbn(content_id))),
+    _ => Err(UserError("One of --content-id or --linked-id is required".to_owned()).into()),
   }
 }
 
@@ -84,8 +112,8 @@ pub fn normalize_identifiers(linked_id: Option<String>, content_id: Option<&str>
 /// Used when a book can't be found by ISBN or linked ID so the hook
 /// can show a user-facing message without treating it as a crash.
 pub fn book_not_found(msg: &str) -> ! {
-  log!(
-    "BEGIN_JSON\n{}",
+  emit_json!(
+    "{}",
     json!({ "error_code": "BOOK_NOT_FOUND", "message": msg })
   );
 

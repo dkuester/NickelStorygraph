@@ -16,6 +16,7 @@
 #include "search/searchdialog.h"
 #include "settings.h"
 #include "settings/settingsdialog.h"
+#include "storygraph_status.h"
 #include "synccontroller.h"
 #include "translations.h"
 
@@ -130,7 +131,7 @@ void MenuController::showStatusMenu(QJsonObject doc) {
       {
           {t("Back"), MenuOption::BACK, true},
           {t("Want to Read"), MenuOption::WANT_TO_READ, status == MenuOption::WANT_TO_READ},
-          {t("Currently Reading"), MenuOption::CURRENTLY_READING, status == MenuOption::CURRENTLY_READING || status == 6},
+          {t("Currently Reading"), MenuOption::CURRENTLY_READING, status == MenuOption::CURRENTLY_READING || status == StoryGraphStatusRereading},
           {t("Paused"), MenuOption::PAUSED, status == MenuOption::PAUSED},
           {t("Read"), MenuOption::READ, status == MenuOption::READ},
           {t("Did Not Finish"), MenuOption::DID_NOT_FINISH, status == MenuOption::DID_NOT_FINISH},

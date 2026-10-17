@@ -114,7 +114,10 @@ CLI *CLI::update(int percentage, Options options) {
 }
 
 CLI *CLI::login(QString email, QString password, Options options) {
-  return new CLI({"login", email, password}, options);
+  // Pass the password over stdin so it never shows up in the process list
+  // (argv) on the device.
+  options.stdinData = (password + "\n").toUtf8();
+  return new CLI({"login", email}, options);
 }
 
 QStringList CLI::getIdentifier(Options options) {
@@ -224,43 +227,55 @@ void CLI::networkConnected() {
 
   QProcess *process = new QProcess(this);
   process->start(Files::cli, arguments);
+  if (!options.stdinData.isEmpty()) {
+    process->write(options.stdinData);
+    process->closeWriteChannel();
+  }
   QObject::connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &CLI::processFinished);
 }
 
 void CLI::processFinished(int exitCode) {
   QProcess *process = qobject_cast<QProcess *>(sender());
 
+  // stdout is the machine-readable channel: the CLI writes exactly one JSON
+  // document to it (or nothing). Diagnostics and errors go to stderr.
   QByteArray stdout = process->readAllStandardOutput();
+  QByteArray stderr = process->readAllStandardError();
 
-  int index = stdout.indexOf("BEGIN_JSON");
-
-  QByteArray bytes = stdout;
-  if (index >= 0) {
-    bytes = stdout.left(index);
-  }
-
-  QList<QByteArray> lines = bytes.split('\n');
-  for (QByteArray &line : lines) {
-    if (line.length() == 0)
+  // Mirror the CLI's stderr into Nickel's log so diagnostics are visible via
+  // logread on the device.
+  QList<QByteArray> stderrLines = stderr.split('\n');
+  for (QByteArray &line : stderrLines) {
+    if (line.trimmed().length() == 0)
       continue;
 
     nh_log("%s", qPrintable(line));
   }
 
   if (exitCode > 0) {
-    QByteArray stderr = process->readAllStandardError();
-    nh_log("Error from command line \"%s\"", qPrintable(stderr));
+    // The last non-empty stderr line is the user-facing error message.
+    QByteArray message;
+    for (int i = stderrLines.size() - 1; i >= 0; i--) {
+      if (stderrLines[i].trimmed().length() > 0) {
+        message = stderrLines[i];
+        break;
+      }
+    }
+
+    if (message.isEmpty()) {
+      message = "An unknown error occurred.";
+    }
+
     if (!options.silent) {
-      ConfirmationDialogFactory__showErrorDialog("StoryGraph", QString(stderr));
+      ConfirmationDialogFactory__showErrorDialog("StoryGraph", QString(message));
     }
     failure();
     deleteLater();
     return;
   }
 
-  if (index >= 0) {
-    QByteArray json = stdout.right(stdout.size() - index - 10);
-    QJsonObject obj = QJsonDocument::fromJson(json).object();
+  if (!stdout.trimmed().isEmpty()) {
+    QJsonObject obj = QJsonDocument::fromJson(stdout.trimmed()).object();
 
     if (obj.value("error_code").toString() == "BOOK_NOT_FOUND") {
       ConfirmationDialog *dialog = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
