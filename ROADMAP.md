@@ -4,6 +4,10 @@ NickelStorygraph has no public API — it scrapes the StoryGraph website, so any
 UI change can silently break it. Priorities therefore lean toward robustness
 over new features.
 
+Items are grouped by effort vs. value: **quick wins** (ship fast), **high
+priority** (highest value, worth the effort), and **low priority (optional)**
+(nice-to-have, safe to defer).
+
 ## Recently completed
 
 - [x] Password over stdin (never in the process argv)
@@ -18,10 +22,33 @@ over new features.
 - [x] German + abbreviated month names; HTML-escaped review text
 - [x] Slug auto-caching, magic-static singletons, `calloc`-hack documented
 
-## Priority 1 — Robustness
+## Quick wins
 
-The scraper is the whole product. These make StoryGraph UI changes fail loudly
-(in CI) or fail clearly (on device) instead of silently.
+Low effort, clear value — shippable in a single sitting.
+
+### Started / finished dates
+Status changes set "started"/"finished"; StoryGraph also tracks the concrete
+dates. Sync those instead of only flipping the status.
+
+- **Note:** verify exactly what StoryGraph expects before implementing.
+- **Effort:** small.
+
+### More metadata in the link dialog
+The manual-link search shows only title/format. Adding page count, rating, and
+series would reduce wrong-edition links.
+
+- **Effort:** small.
+
+### Firmware self-check
+The `calloc` object-size hack is 5.18-specific. A boot check that validates the
+plugin against the firmware version and shows a clear message (instead of a
+silent heap crash) on mismatch.
+
+- **Effort:** small.
+
+## High priority
+
+Higher effort, highest value — the product's health and the most painful UX.
 
 ### Fixture-based parser tests
 Capture real StoryGraph HTML snapshots and assert the parsing selectors
@@ -50,35 +77,23 @@ cookies and writes them to the device.
 - **Why:** the most painful point in the whole flow.
 - **Effort:** medium.
 
-## Priority 2 — Features
+## Low priority (optional)
 
-### Annual reading challenge
-StoryGraph has an "N books this year" challenge. The plugin already shows goals
-and the streak; showing challenge progress is consistent with that.
+Nice-to-have, not essential — safe to defer.
 
-- **Effort:** small–medium.
+### Reading challenges *(optional)*
+Show the user's active StoryGraph reading challenges and their progress, from
+the dashboard (`/reading_challenges/dashboard/<slug>`). This covers the official
+yearly challenge ("N books this year") and any community challenges the user
+joined.
 
-### Started / finished dates
-Status changes set "started"/"finished"; StoryGraph also tracks the concrete
-dates. Sync those instead of only flipping the status.
-
-- **Note:** verify exactly what StoryGraph expects before implementing.
-- **Effort:** small.
-
-### More metadata in the link dialog
-The manual-link search shows only title/format. Adding page count, rating, and
-series would reduce wrong-edition links.
-
-- **Effort:** small.
-
-## Priority 3 — Maintenance / ops
-
-### Firmware self-check
-The `calloc` object-size hack is 5.18-specific. A boot check that validates the
-plugin against the firmware version and shows a clear message (instead of a
-silent heap crash) on mismatch.
-
-- **Effort:** small.
+- **Why:** the page is authenticated and scrapable, and the slug is already
+  cached — the plugin only needs a new CLI command + a home-screen panel
+  (like the existing Goals view).
+- **Scope:** start with the overview (challenge name + books-read/goal
+  progress); per-prompt tracking (which books fulfil which prompts) is a
+  follow-up.
+- **Effort:** medium.
 
 ### Tolino smoke tests
 The 5.18 firmware runs on Tolinos too; installation paths and Tolino-specific
