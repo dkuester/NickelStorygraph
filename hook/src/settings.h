@@ -39,6 +39,9 @@ public:
   QString getRememberToken();
   QString getLanguage();
 
+  void setSessionCookie(QString value);
+  void setRememberToken(QString value);
+
   void setSyncDaily(int value);
   int getSyncDaily();
 

@@ -8,6 +8,7 @@ pub mod listbookmarks;
 pub mod listeditions;
 pub mod listjournal;
 pub mod listreading;
+pub mod login;
 pub mod search;
 pub mod setuserbook;
 pub mod switchedition;

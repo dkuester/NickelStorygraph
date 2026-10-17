@@ -111,6 +111,16 @@ QString Settings::getRememberToken() { return config->value("remember_user_token
 
 QString Settings::getLanguage() { return config->value("language").toString(); }
 
+void Settings::setSessionCookie(QString value) {
+  config->setValue("session_cookie", value);
+  config->sync();
+}
+
+void Settings::setRememberToken(QString value) {
+  config->setValue("remember_user_token", value);
+  config->sync();
+}
+
 void Settings::setCloseThreshold(int value) {
   QVariant realValue = "never";
 

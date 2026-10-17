@@ -12,7 +12,7 @@ use std::sync::LazyLock;
 
 use anyhow::{Context, Result, bail};
 use reqwest::blocking::{Client, Response};
-use reqwest::cookie::Jar;
+use reqwest::cookie::{CookieStore, Jar};
 use reqwest::{Certificate, StatusCode, Url};
 use retry::delay::{Exponential, jitter};
 use retry::retry;
@@ -102,6 +102,19 @@ struct PageData {
 
 // ── Singleton client ──────────────────────────────────────────────────────────
 
+fn build_client(jar: Arc<Jar>) -> Result<Client, reqwest::Error> {
+  Client::builder()
+    .cookie_provider(jar)
+    .user_agent(USER_AGENT)
+    .tls_certs_only(
+      webpki_root_certs::TLS_SERVER_ROOT_CERTS
+        .iter()
+        .map(|cert| Certificate::from_der(cert))
+        .collect::<Result<Vec<_>, _>>()?,
+    )
+    .build()
+}
+
 static CLIENT: LazyLock<Result<Client, reqwest::Error>> = LazyLock::new(|| {
   let base: Url = BASE_URL.parse().expect("BASE_URL is valid");
   let jar = Arc::new(Jar::default());
@@ -118,16 +131,7 @@ static CLIENT: LazyLock<Result<Client, reqwest::Error>> = LazyLock::new(|| {
   jar.add_cookie_str("cookies_popup_seen=yes", &base);
   jar.add_cookie_str("plus_popup_seen=yes", &base);
 
-  Client::builder()
-    .cookie_provider(jar)
-    .user_agent(USER_AGENT)
-    .tls_certs_only(
-      webpki_root_certs::TLS_SERVER_ROOT_CERTS
-        .iter()
-        .map(|cert| Certificate::from_der(cert))
-        .collect::<Result<Vec<_>, _>>()?,
-    )
-    .build()
+  build_client(jar)
 });
 
 fn client() -> Result<&'static Client> {
@@ -1604,4 +1608,71 @@ fn parse_storygraph_date(date_text: &str) -> String {
     }
   }
   date_text.to_owned()
+}
+
+/// Result of a successful email/password login.
+#[derive(Serialize, Debug)]
+pub struct LoginResult {
+  pub session_cookie: String,
+  pub remember_user_token: String,
+}
+
+/// Logs in with email + password and returns the session cookies StoryGraph
+/// issued. Uses a fresh cookie jar (not the config-seeded singleton), mirrors
+/// the browser's sign-in form POST, and reads the cookies back from the jar.
+pub fn login(email: &str, password: &str) -> Result<LoginResult> {
+  let base: Url = BASE_URL.parse().expect("BASE_URL is valid");
+  let jar = Arc::new(Jar::default());
+  let client = build_client(jar.clone()).context("Failed to build login client")?;
+
+  let sign_in_url = format!("{BASE_URL}/users/sign_in");
+
+  // 1. Load the sign-in page to obtain a CSRF token.
+  let res = client
+    .get(&sign_in_url)
+    .send()
+    .context("Failed to load sign-in page")?;
+  let html = res.text().context("Failed to read sign-in page body")?;
+  let csrf = csrf_token(&html).context("Could not find CSRF token on sign-in page")?;
+
+  // 2. Submit credentials, mirroring the browser form.
+  let res = client
+    .post(&sign_in_url)
+    .header("Origin", BASE_URL)
+    .header("Referer", &sign_in_url)
+    .form(&[
+      ("authenticity_token", csrf.as_str()),
+      ("user[email]", email),
+      ("user[password]", password),
+      ("commit", "Sign in"),
+    ])
+    .send()
+    .context("Failed to submit sign-in form")?;
+
+  // 3. On success StoryGraph redirects away from the sign-in page.
+  if res.url().path().contains("/users/sign_in") {
+    bail!("Login failed — check your email address and password.");
+  }
+
+  // 4. Read the session cookies back from the jar (a "name=value; name=value"
+  //    header string).
+  let cookies_header = jar.cookies(&base).context("Login produced no cookies")?;
+  let cookies_str = cookies_header.to_str().unwrap_or("");
+  let mut session_cookie = String::new();
+  let mut remember_user_token = String::new();
+  for pair in cookies_str.split(';') {
+    if let Some((name, value)) = pair.trim().split_once('=') {
+      match name.trim() {
+        "_storygraph_session" => session_cookie = value.trim().to_owned(),
+        "remember_user_token" => remember_user_token = value.trim().to_owned(),
+        _ => {}
+      }
+    }
+  }
+
+  if session_cookie.is_empty() {
+    bail!("Login did not return a session cookie.");
+  }
+
+  Ok(LoginResult { session_cookie, remember_user_token })
 }

@@ -8,6 +8,7 @@
 #include "../synccontroller.h"
 #include "../widgets/label.h"
 #include "checkboxrow.h"
+#include "logindialog.h"
 #include "menurow.h"
 #include "settingsdialog.h"
 #include "staticrow.h"
@@ -210,6 +211,10 @@ QFrame *SettingsDialog::buildGeneral() {
   username = new StaticRow(t("Authorized user"), t("Unknown"), false);
   layout->addWidget(username);
 
+  MenuRow *loginRow = new MenuRow(t("Log in"), MenuRowType::Tap, {{t("Log in"), true}}, {}, true);
+  QObject::connect(loginRow, &MenuRow::triggered, this, &SettingsDialog::openLogin);
+  layout->addWidget(loginRow);
+
   CLI::Options options;
   options.silent = true;
 
@@ -406,6 +411,8 @@ void SettingsDialog::setCompletionPrompt(bool value) { Settings::getInstance()->
 void SettingsDialog::setDebug(bool value) { Settings::getInstance()->setDebug(value); }
 
 void SettingsDialog::saveLogs() { nh_dump_log(); }
+
+void SettingsDialog::openLogin() { LoginDialog::show(); }
 
 void SettingsDialog::setHomeMenuEnabled(bool value) {
   Settings::getInstance()->setHomeMenuEnabled(value);
