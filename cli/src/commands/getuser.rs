@@ -2,10 +2,10 @@ use anyhow::Result;
 use argh::FromArgs;
 use serde_json::json;
 
-use crate::{debug_log, log};
+use crate::emit_json;
 use crate::storygraph;
 use crate::utils::VERSION;
-use crate::emit_json;
+use crate::{debug_log, log};
 
 /// Verify session and return basic user info.
 #[derive(FromArgs, PartialEq, Debug)]

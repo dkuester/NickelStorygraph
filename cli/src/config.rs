@@ -93,10 +93,30 @@ impl Default for Config {
   }
 }
 
+/// Strips a bare `[General]` section-header line from INI content.
+///
+/// The C++ hook (QSettings, `IniFormat`) writes `key=value` lines with no
+/// section header, and `config_example.ini` is the same. serini's own
+/// serializer, used only as a fallback when the example file is missing,
+/// emits a `[General]` header. serini can't map a `[General]` section back
+/// onto the root `Config` struct — it would look for a field literally named
+/// `General` and drop every real key — so the header must go. Removing only
+/// whole lines that equal `[General]` is safe: a config *value* can never be a
+/// bare `[General]` line, only a section header can.
+fn strip_general_header(content: &str) -> String {
+  content
+    .lines()
+    .filter(|line| line.trim() != "[General]")
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
   let config = || -> Result<Config> {
     let current_exe = std::env::current_exe().context("Failed to get current binary path")?;
-    let exe_dir = current_exe.parent().context("Failed to get current binary directory")?;
+    let exe_dir = current_exe
+      .parent()
+      .context("Failed to get current binary directory")?;
     let config_path = exe_dir.join("config.ini");
 
     // Create config.ini if it doesn't exist yet.
@@ -105,17 +125,18 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
       // Fall back to a generated default if the example isn't present.
       let example_path = exe_dir.join("config_example.ini");
       if example_path.exists() {
-        fs::copy(&example_path, &config_path).context("Failed to copy config_example.ini to config.ini")?;
+        fs::copy(&example_path, &config_path)
+          .context("Failed to copy config_example.ini to config.ini")?;
       } else {
-        let ini = serini::to_string(&Config::default()).context("Failed to serialize default config")?;
+        let ini =
+          serini::to_string(&Config::default()).context("Failed to serialize default config")?;
         fs::write(&config_path, ini).context("Failed to write default config")?;
       }
     }
 
-    let content = fs::read_to_string(&config_path)
-      .context("Failed to read config file")?
-      .replace("[General]", "");
-    let config: Config = serini::from_str(&content).context("Failed to parse config file")?;
+    let content = fs::read_to_string(&config_path).context("Failed to read config file")?;
+    let config: Config =
+      serini::from_str(&strip_general_header(&content)).context("Failed to parse config file")?;
 
     Ok(Config {
       sqlite_path: exe_dir
@@ -137,3 +158,35 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
     }
   }
 });
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn strip_general_header_keeps_values_with_general_text() {
+    let ini = "[General]\nsession_cookie=abc\nnote=see [General] docs\n";
+    let out = strip_general_header(ini);
+    assert!(!out.lines().any(|l| l.trim() == "[General]"));
+    assert!(out.contains("session_cookie=abc"));
+    assert!(out.contains("note=see [General] docs"));
+  }
+
+  #[test]
+  fn parses_qsettings_style_bare_keys() {
+    let ini = "session_cookie=abc\nremember_user_token=xyz\nsync_daily=3\n";
+    let c: Config = serini::from_str(&strip_general_header(ini)).unwrap();
+    assert_eq!(c.session_cookie, "abc");
+    assert_eq!(c.remember_user_token, "xyz");
+    assert_eq!(c.sync_daily, 3);
+    assert!(!c.debug); // missing fields fall back to Default
+  }
+
+  #[test]
+  fn parses_serini_generated_general_header() {
+    let ini = "[General]\nsession_cookie=abc\nsync_daily=3\n";
+    let c: Config = serini::from_str(&strip_general_header(ini)).unwrap();
+    assert_eq!(c.session_cookie, "abc");
+    assert_eq!(c.sync_daily, 3);
+  }
+}

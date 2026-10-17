@@ -16,13 +16,14 @@ pub struct ListBookmarks {}
 pub fn run(args: ListBookmarks) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
 
-  let bookmarks = Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-    .context(format!(
-      "Failed to connect to the database <i>{}</i>",
-      &CONFIG.sqlite_path
-    ))?
-    .prepare(
-      "SELECT
+  let bookmarks =
+    Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+      .context(format!(
+        "Failed to connect to the database <i>{}</i>",
+        CONFIG.sqlite_path
+      ))?
+      .prepare(
+        "SELECT
         Title,
         Attribution,
         VolumeID,
@@ -35,20 +36,20 @@ pub fn run(args: ListBookmarks) -> Result<()> {
       AND (bookmark.Text != '' OR bookmark.Annotation != '')
       GROUP BY VolumeID
       ORDER BY Bookmark.DateModified DESC;",
-    )
-    .context("Failed to prepare list bookmarks query")?
-    .query_map([], |row| {
-      Ok(json!({
-         "title": row.get::<_, String>(0)?,
-         "attribution": row.get::<_, String>(1)?,
-         "volume_id": row.get::<_, String>(2)?,
-         "count": row.get::<_, u32>(3)?,
-         "last_modified": row.get::<_, String>(4)?,
-      }))
-    })
-    .context("Failed to run list bookmarks query")?
-    .collect::<Result<Vec<_>, _>>()
-    .context("Failed to map list bookmarks query result")?;
+      )
+      .context("Failed to prepare list bookmarks query")?
+      .query_map([], |row| {
+        Ok(json!({
+           "title": row.get::<_, String>(0)?,
+           "attribution": row.get::<_, String>(1)?,
+           "volume_id": row.get::<_, String>(2)?,
+           "count": row.get::<_, u32>(3)?,
+           "last_modified": row.get::<_, String>(4)?,
+        }))
+      })
+      .context("Failed to run list bookmarks query")?
+      .collect::<Result<Vec<_>, _>>()
+      .context("Failed to map list bookmarks query result")?;
 
   if bookmarks.is_empty() {
     return Ok(());

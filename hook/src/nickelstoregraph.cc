@@ -59,6 +59,13 @@ bool (*WirelessWorkflowManager__isInternetAccessible)(WirelessWorkflowManager *_
 void (*TouchLabel__constructor)(TouchLabel *_this, QWidget *parent, QFlags<Qt::WindowType>);
 void (*TouchLabel__setHitStateEnabled)(TouchLabel *_this, bool enabled);
 
+// Nickel's widget classes are allocated by hand because their constructors are
+// not exported symbols: we resolve the constructor function pointers below
+// (via NickelHook) and call them on raw zeroed storage. The fixed sizes
+// (2048 / 512 / 1024 bytes) are hand-measured object sizes for the Qt6 /
+// firmware 5.18+ class layout and must be >= sizeof(the class) or the
+// constructor overruns the allocation and corrupts the heap. Re-measure and
+// update these when the firmware layout changes.
 TouchLabel *construct_TouchLabel(QWidget *parent) {
   TouchLabel *label = reinterpret_cast<TouchLabel *>(calloc(1, 2048));
   TouchLabel__constructor(label, parent, Qt::WindowType());

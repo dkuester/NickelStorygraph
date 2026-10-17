@@ -18,7 +18,7 @@ use retry::delay::{Exponential, jitter};
 use retry::retry;
 use scraper::{Html, Selector};
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::config::CONFIG;
@@ -27,15 +27,14 @@ use crate::utils::UserError;
 
 pub const BASE_URL: &str = "https://app.thestorygraph.com";
 
-const USER_AGENT: &str =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
+const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 
 // ── Output types (serialized to JSON for the hook) ───────────────────────────
 
-fn serialize_author_as_array<S: serde::Serializer>(val: &String, s: S) -> Result<S::Ok, S::Error> {
+fn serialize_author_as_array<S: serde::Serializer>(val: &str, s: S) -> Result<S::Ok, S::Error> {
   use serde::ser::SerializeSeq;
   let mut seq = s.serialize_seq(Some(1))?;
-  seq.serialize_element(val.as_str())?;
+  seq.serialize_element(val)?;
   seq.end()
 }
 
@@ -167,13 +166,20 @@ fn get(path: &str) -> Result<String> {
   debug_log!("GET {url}");
 
   let res = retry(Exponential::from_millis(500).map(jitter).take(3), || {
-    client()?.get(&url).send().context(format!("GET {url} failed"))
+    client()?
+      .get(&url)
+      .send()
+      .context(format!("GET {url} failed"))
   })
   .map_err(|e| e.error)?;
 
   check_session(&res)?;
-  res.error_for_status_ref().context(format!("GET {url} returned error status"))?;
-  res.text().context(format!("Failed to read body from GET {url}"))
+  res
+    .error_for_status_ref()
+    .context(format!("GET {url} returned error status"))?;
+  res
+    .text()
+    .context(format!("Failed to read body from GET {url}"))
 }
 
 /// Uses regular browser headers instead of XHR.
@@ -185,7 +191,10 @@ fn post_form_browser(path: &str, fields: &[(String, String)]) -> Result<String> 
   let res = retry(Exponential::from_millis(500).map(jitter).take(3), || {
     client()?
       .post(&url)
-      .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+      .header(
+        "Accept",
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      )
       .header("Origin", BASE_URL)
       .header("Referer", &url)
       .form(fields)
@@ -195,7 +204,11 @@ fn post_form_browser(path: &str, fields: &[(String, String)]) -> Result<String> 
   .map_err(|e| e.error)?;
 
   if res.status() == StatusCode::FOUND {
-    let location = res.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or("");
+    let location = res
+      .headers()
+      .get("location")
+      .and_then(|v| v.to_str().ok())
+      .unwrap_or("");
     if location.contains("/users/sign_in") {
       bail!(
         "StoryGraph session has expired. Please update <i>session_cookie</i> and <i>remember_user_token</i> in <i>.adds/NickelStorygraph/config.ini</i>."
@@ -205,21 +218,32 @@ fn post_form_browser(path: &str, fields: &[(String, String)]) -> Result<String> 
   }
 
   check_session(&res)?;
-  res.error_for_status_ref().context(format!("POST {url} returned error status"))?;
-  res.text().context(format!("Failed to read body from POST {url}"))
+  res
+    .error_for_status_ref()
+    .context(format!("POST {url} returned error status"))?;
+  res
+    .text()
+    .context(format!("Failed to read body from POST {url}"))
 }
 
 fn post_form(path: &str, fields: &[(&str, &str)]) -> Result<String> {
   let url = format!("{BASE_URL}{path}");
   debug_log!("POST {url}");
 
-  let csrf = fields.iter().find(|(k, _)| *k == "authenticity_token").map(|(_, v)| *v).unwrap_or("");
+  let csrf = fields
+    .iter()
+    .find(|(k, _)| *k == "authenticity_token")
+    .map(|(_, v)| *v)
+    .unwrap_or("");
 
   let res = retry(Exponential::from_millis(500).map(jitter).take(3), || {
     client()?
       .post(&url)
       .header("X-Requested-With", "XMLHttpRequest")
-      .header("Accept", "text/javascript, application/javascript, application/ecmascript, */*; q=0.01")
+      .header(
+        "Accept",
+        "text/javascript, application/javascript, application/ecmascript, */*; q=0.01",
+      )
       .header("Origin", BASE_URL)
       .header("Referer", &url)
       .header("X-CSRF-Token", csrf)
@@ -231,7 +255,11 @@ fn post_form(path: &str, fields: &[(&str, &str)]) -> Result<String> {
 
   // 302 redirect back to the book page is a success for StoryGraph mutations.
   if res.status() == StatusCode::FOUND {
-    let location = res.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or("");
+    let location = res
+      .headers()
+      .get("location")
+      .and_then(|v| v.to_str().ok())
+      .unwrap_or("");
     if location.contains("/users/sign_in") {
       bail!(
         "StoryGraph session has expired. Please update <i>session_cookie</i> and <i>remember_user_token</i> in <i>.adds/NickelStorygraph/config.ini</i>."
@@ -241,8 +269,12 @@ fn post_form(path: &str, fields: &[(&str, &str)]) -> Result<String> {
   }
 
   check_session(&res)?;
-  res.error_for_status_ref().context(format!("POST {url} returned error status"))?;
-  res.text().context(format!("Failed to read body from POST {url}"))
+  res
+    .error_for_status_ref()
+    .context(format!("POST {url} returned error status"))?;
+  res
+    .text()
+    .context(format!("Failed to read body from POST {url}"))
 }
 
 // ── HTML helpers ──────────────────────────────────────────────────────────────
@@ -251,10 +283,10 @@ fn csrf_token(html: &str) -> Option<String> {
   let doc = Html::parse_document(html);
 
   let meta_sel = Selector::parse(r#"meta[name="csrf-token"]"#).expect("valid selector");
-  if let Some(el) = doc.select(&meta_sel).next() {
-    if let Some(content) = el.value().attr("content") {
-      return Some(content.to_owned());
-    }
+  if let Some(el) = doc.select(&meta_sel).next()
+    && let Some(content) = el.value().attr("content")
+  {
+    return Some(content.to_owned());
   }
 
   let input_sel = Selector::parse(r#"input[name="authenticity_token"]"#).expect("valid selector");
@@ -265,7 +297,7 @@ fn csrf_token(html: &str) -> Option<String> {
     .map(str::to_owned)
 }
 
-fn text_of<'a>(doc: &'a Html, selector: &str) -> String {
+fn text_of(doc: &Html, selector: &str) -> String {
   Selector::parse(selector)
     .ok()
     .and_then(|sel| doc.select(&sel).next())
@@ -278,7 +310,9 @@ fn extract_value_near_name(html: &str, needle: &str) -> Option<String> {
   let after = &html[i..];
   let v_pos = after.find("value=\"")?;
   // Ensure value= is within the same tag (no > between)
-  if after[..v_pos].contains('>') { return None; }
+  if after[..v_pos].contains('>') {
+    return None;
+  }
   let start = v_pos + 7;
   let end = after[start..].find('"')?;
   Some(after[start..start + end].to_owned())
@@ -313,7 +347,11 @@ fn percent_from_style(style: &str) -> Option<u32> {
   let i = style.find("width:")?;
   let after = style[i + 6..].trim_start();
   let end = after.find('%')?;
-  after[..end].trim().parse::<f32>().ok().map(|f| f.round() as u32)
+  after[..end]
+    .trim()
+    .parse::<f32>()
+    .ok()
+    .map(|f| f.round() as u32)
 }
 
 /// Extracts the progress percentage from the `edit-progress` progress bar's
@@ -390,7 +428,9 @@ fn parse_status_text(text: &str) -> Option<u8> {
 }
 
 fn status_to_str(status_id: u8) -> &'static str {
-  ReadingStatus::from_id(status_id).map(ReadingStatus::as_str).unwrap_or("currently-reading")
+  ReadingStatus::from_id(status_id)
+    .map(ReadingStatus::as_str)
+    .unwrap_or("currently-reading")
 }
 
 /// Fetch /books/:slug and extract mutable form state needed for POST calls.
@@ -401,7 +441,15 @@ fn fetch_page_data(book_id: &str) -> Result<(String, PageData)> {
   let last_pages = hidden_value(&html, "read_status[last_reached_pages]");
   let last_percent = hidden_value(&html, "read_status[last_reached_percent]");
 
-  Ok((html, PageData { csrf, book_pages, last_pages, last_percent }))
+  Ok((
+    html,
+    PageData {
+      csrf,
+      book_pages,
+      last_pages,
+      last_percent,
+    },
+  ))
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -409,12 +457,12 @@ fn fetch_page_data(book_id: &str) -> Result<(String, PageData)> {
 /// A single reading goal (books, pages, or hours) from the challenges dashboard.
 #[derive(Serialize, Debug)]
 pub struct GoalEntry {
-  pub label: String,    // "Books", "Pages", "Hours"
-  pub current: String,  // raw string: "10", "2,458", "27.98"
-  pub target: String,   // raw string: "26", "10,000", "50"
-  pub unit: String,     // "books", "pages", "hours"
-  pub percent: u32,     // 0–100
-  pub status: String,   // status message text
+  pub label: String,   // "Books", "Pages", "Hours"
+  pub current: String, // raw string: "10", "2,458", "27.98"
+  pub target: String,  // raw string: "26", "10,000", "50"
+  pub unit: String,    // "books", "pages", "hours"
+  pub percent: u32,    // 0–100
+  pub status: String,  // status message text
 }
 
 /// Reading goals summary from the StoryGraph challenges dashboard.
@@ -526,10 +574,21 @@ pub fn get_goals() -> Result<ReadingGoals> {
       (String::new(), String::new(), String::new())
     };
 
-    goals.push(GoalEntry { label, current, target, unit, percent, status });
+    goals.push(GoalEntry {
+      label,
+      current,
+      target,
+      unit,
+      percent,
+      status,
+    });
   }
 
-  Ok(ReadingGoals { year, books_read, goals })
+  Ok(ReadingGoals {
+    year,
+    books_read,
+    goals,
+  })
 }
 
 /// The user's current StoryGraph reading streak.
@@ -581,11 +640,16 @@ pub fn get_streak() -> Result<Streak> {
   let dd_sel = Selector::parse("dl.font-semibold dd").expect("valid");
   let italic_sel = Selector::parse("span.italic").expect("valid");
 
-  let mut streak = Streak { requirement, ..Default::default() };
+  let mut streak = Streak {
+    requirement,
+    ..Default::default()
+  };
 
   for dt in doc.select(&dt_sel) {
     let label = dt.text().collect::<String>().trim().to_owned();
-    let Some(parent) = dt.parent().and_then(scraper::ElementRef::wrap) else { continue };
+    let Some(parent) = dt.parent().and_then(scraper::ElementRef::wrap) else {
+      continue;
+    };
     let dd_text = parent
       .select(&dd_sel)
       .next()
@@ -628,14 +692,14 @@ pub struct ReadingBook {
 #[derive(Serialize, Debug)]
 pub struct FeedItem {
   pub username: String,
-  pub action: String,               // "started reading", "finished reading and reviewed", etc.
-  pub time_ago: String,             // "1d", "2h", "5m"
+  pub action: String,   // "started reading", "finished reading and reviewed", etc.
+  pub time_ago: String, // "1d", "2h", "5m"
   pub book_title: String,
   pub book_author: String,
   pub cover_url: Option<String>,
   pub genres: Vec<String>,
   pub moods: Vec<String>,
-  pub rating: Option<f32>,          // present on "finished reading and reviewed" items
+  pub rating: Option<f32>, // present on "finished reading and reviewed" items
   pub review_snippet: Option<String>, // truncated review text, if present
 }
 
@@ -646,38 +710,48 @@ pub fn get_feed() -> Result<Vec<FeedItem>> {
   let html = get("/community")?;
   let doc = Html::parse_document(&html);
 
-  let item_sel    = Selector::parse("[data-news-feed-item-id]").expect("valid");
-  let h3_sel      = Selector::parse("h3").expect("valid");
+  let item_sel = Selector::parse("[data-news-feed-item-id]").expect("valid");
+  let h3_sel = Selector::parse("h3").expect("valid");
   let profile_sel = Selector::parse(r#"a[href^="/profile/"]"#).expect("valid");
-  let cover_sel   = Selector::parse(".book-cover img").expect("valid");
-  let title_sel   = Selector::parse("h4 a").expect("valid");
-  let author_sel  = Selector::parse(r#"p a[href^="/authors/"]"#).expect("valid");
-  let time_sel    = Selector::parse(r#"span[class*="absolute"]"#).expect("valid");
-  let teal_sel    = Selector::parse(r#"span[class*="text-teal-800"]"#).expect("valid");
-  let pink_sel    = Selector::parse(r#"span[class*="text-pink-700"]"#).expect("valid");
-  let rating_sel  = Selector::parse(r#"a[aria-label*="Rating:"]"#).expect("valid");
-  let review_sel  = Selector::parse(r#"a[class*="clamp-3"]"#).expect("valid");
+  let cover_sel = Selector::parse(".book-cover img").expect("valid");
+  let title_sel = Selector::parse("h4 a").expect("valid");
+  let author_sel = Selector::parse(r#"p a[href^="/authors/"]"#).expect("valid");
+  let time_sel = Selector::parse(r#"span[class*="absolute"]"#).expect("valid");
+  let teal_sel = Selector::parse(r#"span[class*="text-teal-800"]"#).expect("valid");
+  let pink_sel = Selector::parse(r#"span[class*="text-pink-700"]"#).expect("valid");
+  let rating_sel = Selector::parse(r#"a[aria-label*="Rating:"]"#).expect("valid");
+  let review_sel = Selector::parse(r#"a[class*="clamp-3"]"#).expect("valid");
 
   let mut items = Vec::new();
 
   for item in doc.select(&item_sel) {
     // Time: the absolute-positioned span in the top-right corner
-    let time_ago = item.select(&time_sel).next()
+    let time_ago = item
+      .select(&time_sel)
+      .next()
       .map(|el| el.text().collect::<String>().trim().to_owned())
       .unwrap_or_default();
 
     // Username + action from the first h3 (mobile header)
     let (username, action) = if let Some(h3) = item.select(&h3_sel).next() {
-      let username = h3.select(&profile_sel).next()
+      let username = h3
+        .select(&profile_sel)
+        .next()
         .map(|el| el.text().collect::<String>().trim().to_owned())
         .unwrap_or_default();
 
       // Collect all text nodes; strip username prefix to get the action verb
-      let full: String = h3.text().map(|t| t.trim()).filter(|t| !t.is_empty()).collect::<Vec<_>>().join(" ");
+      let full: String = h3
+        .text()
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
       let action = if username.is_empty() {
         full.trim().to_owned()
       } else {
-        full.trim()
+        full
+          .trim()
           .replacen(&username, "", 1)
           .trim()
           .trim_end_matches(':')
@@ -689,56 +763,97 @@ pub fn get_feed() -> Result<Vec<FeedItem>> {
       (String::new(), String::new())
     };
 
-    if username.is_empty() { continue; }
+    if username.is_empty() {
+      continue;
+    }
 
     // Book cover
-    let cover_url = item.select(&cover_sel).next()
-      .and_then(|el| el.value().attr("src").or_else(|| el.value().attr("data-src")))
+    let cover_url = item
+      .select(&cover_sel)
+      .next()
+      .and_then(|el| {
+        el.value()
+          .attr("src")
+          .or_else(|| el.value().attr("data-src"))
+      })
       .map(|src| {
-        if src.starts_with("http") { src.to_owned() }
-        else { format!("{BASE_URL}{src}") }
+        if src.starts_with("http") {
+          src.to_owned()
+        } else {
+          format!("{BASE_URL}{src}")
+        }
       });
 
-    let book_title = item.select(&title_sel).next()
+    let book_title = item
+      .select(&title_sel)
+      .next()
       .map(|el| el.text().collect::<String>().trim().to_owned())
       .unwrap_or_default();
 
-    let book_author = item.select(&author_sel).next()
+    let book_author = item
+      .select(&author_sel)
+      .next()
       .map(|el| el.text().collect::<String>().trim().to_owned())
       .unwrap_or_default();
 
     // Genres (teal) and moods (pink) — deduplicated (each tag appears twice in mobile+desktop)
     let mut seen_g = std::collections::HashSet::new();
-    let genres: Vec<String> = item.select(&teal_sel)
+    let genres: Vec<String> = item
+      .select(&teal_sel)
       .filter_map(|el| {
         let t = el.text().collect::<String>().trim().to_owned();
-        if t.is_empty() || !seen_g.insert(t.clone()) { None } else { Some(t) }
+        if t.is_empty() || !seen_g.insert(t.clone()) {
+          None
+        } else {
+          Some(t)
+        }
       })
       .collect();
 
     let mut seen_m = std::collections::HashSet::new();
-    let moods: Vec<String> = item.select(&pink_sel)
+    let moods: Vec<String> = item
+      .select(&pink_sel)
       .filter_map(|el| {
         let t = el.text().collect::<String>().trim().to_owned();
-        if t.is_empty() || !seen_m.insert(t.clone()) { None } else { Some(t) }
+        if t.is_empty() || !seen_m.insert(t.clone()) {
+          None
+        } else {
+          Some(t)
+        }
       })
       .collect();
 
     // Rating: from aria-label="Rating: 2.0 out of 5"
-    let rating = item.select(&rating_sel).next()
+    let rating = item
+      .select(&rating_sel)
+      .next()
       .and_then(|el| el.value().attr("aria-label"))
       .and_then(|label| {
-        label.strip_prefix("Rating: ")
+        label
+          .strip_prefix("Rating: ")
           .and_then(|s| s.split(" out of").next())
           .and_then(|s| s.trim().parse::<f32>().ok())
       });
 
     // Review snippet from line-clamped link
-    let review_snippet = item.select(&review_sel).next()
+    let review_snippet = item
+      .select(&review_sel)
+      .next()
       .map(|el| el.text().collect::<String>().trim().to_owned())
       .filter(|s| !s.is_empty());
 
-    items.push(FeedItem { username, action, time_ago, book_title, book_author, cover_url, genres, moods, rating, review_snippet });
+    items.push(FeedItem {
+      username,
+      action,
+      time_ago,
+      book_title,
+      book_author,
+      cover_url,
+      genres,
+      moods,
+      rating,
+      review_snippet,
+    });
   }
 
   debug_log!("get_feed(): {} items", items.len());
@@ -747,12 +862,12 @@ pub fn get_feed() -> Result<Vec<FeedItem>> {
 
 fn scrape_shelf_section(doc: &Html, container_selector: &str, status: &str) -> Vec<ReadingBook> {
   let container_sel = Selector::parse(container_selector).expect("valid");
-  let pane_sel      = Selector::parse(".book-pane").expect("valid");
-  let title_sel     = Selector::parse("h3.font-bold a").expect("valid");
-  let author_sel    = Selector::parse(r#"a[href^="/authors/"]"#).expect("valid");
-  let progress_sel  = Selector::parse("input.read-status-last-reached-percent").expect("valid");
-  let edition_sel   = Selector::parse(".toggle-edition-info-link").expect("valid");
-  let cover_sel     = Selector::parse(".book-cover img").expect("valid");
+  let pane_sel = Selector::parse(".book-pane").expect("valid");
+  let title_sel = Selector::parse("h3.font-bold a").expect("valid");
+  let author_sel = Selector::parse(r#"a[href^="/authors/"]"#).expect("valid");
+  let progress_sel = Selector::parse("input.read-status-last-reached-percent").expect("valid");
+  let edition_sel = Selector::parse(".toggle-edition-info-link").expect("valid");
+  let cover_sel = Selector::parse(".book-cover img").expect("valid");
 
   let mut books = Vec::new();
 
@@ -805,14 +920,29 @@ fn scrape_shelf_section(doc: &Html, container_selector: &str, status: &str) -> V
         .and_then(|s| s.trim().strip_suffix(" pages"))
         .and_then(|n| n.trim().parse().ok())
         .unwrap_or(0);
-      let format = parts.get(1).map(|s| s.trim().to_owned()).unwrap_or_default();
-      let year: u32 = parts.get(2).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+      let format = parts
+        .get(1)
+        .map(|s| s.trim().to_owned())
+        .unwrap_or_default();
+      let year: u32 = parts
+        .get(2)
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
 
-      let cover_url = pane.select(&cover_sel).next()
-        .and_then(|el| el.value().attr("src").or_else(|| el.value().attr("data-src")))
+      let cover_url = pane
+        .select(&cover_sel)
+        .next()
+        .and_then(|el| {
+          el.value()
+            .attr("src")
+            .or_else(|| el.value().attr("data-src"))
+        })
         .map(|src| {
-          if src.starts_with("http") { src.to_owned() }
-          else { format!("{BASE_URL}{src}") }
+          if src.starts_with("http") {
+            src.to_owned()
+          } else {
+            format!("{BASE_URL}{src}")
+          }
         });
 
       books.push(ReadingBook {
@@ -855,7 +985,10 @@ pub fn get_user() -> Result<User> {
   require_credentials()?;
 
   if !CONFIG.user_slug.is_empty() {
-    return Ok(User { username: CONFIG.user_slug.clone(), slug: CONFIG.user_slug.clone() });
+    return Ok(User {
+      username: CONFIG.user_slug.clone(),
+      slug: CONFIG.user_slug.clone(),
+    });
   }
 
   let html = get("/")?;
@@ -872,7 +1005,10 @@ pub fn get_user() -> Result<User> {
     .next()
     .context("Could not find user profile link — session may be expired")?;
 
-  Ok(User { username: slug.clone(), slug })
+  Ok(User {
+    username: slug.clone(),
+    slug,
+  })
 }
 
 /// Searches StoryGraph by title/author/ISBN and returns matching books.
@@ -880,7 +1016,10 @@ pub fn get_user() -> Result<User> {
 /// serves covers from a CDN that requires a separate request).
 pub fn search(query: &str) -> Result<Vec<Book>> {
   require_credentials()?;
-  let html = get(&format!("/browse?search_term={}", urlencoding::encode(query)))?;
+  let html = get(&format!(
+    "/browse?search_term={}",
+    urlencoding::encode(query)
+  ))?;
   let doc = Html::parse_document(&html);
 
   let container_sel = Selector::parse(".book-title-author-and-series").expect("valid selector");
@@ -966,15 +1105,26 @@ fn parse_user_book(book_id: &str, html: &str) -> Result<UserBook> {
   let status_id = parse_status_text(&status_text);
 
   // Try progress bar width first (most reliable), then hidden inputs.
-  let progress_percent = progress_percent_from_edit_progress(html)
-    .unwrap_or_else(|| hidden_value(html, "read_status[last_reached_percent]").parse().unwrap_or(0));
+  let progress_percent = progress_percent_from_edit_progress(html).unwrap_or_else(|| {
+    hidden_value(html, "read_status[last_reached_percent]")
+      .parse()
+      .unwrap_or(0)
+  });
 
   let progress_pages: u32 = hidden_value(html, "read_status[last_reached_pages]")
     .parse()
-    .unwrap_or_else(|_| extract_value_near_name(html, "read-status-last-reached-pages").and_then(|v| v.parse().ok()).unwrap_or(0));
+    .unwrap_or_else(|_| {
+      extract_value_near_name(html, "read-status-last-reached-pages")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+    });
   let book_pages: u32 = hidden_value(html, "read_status[book_num_of_pages]")
     .parse()
-    .unwrap_or_else(|_| extract_value_near_name(html, "read-status-book-num-of-pages").and_then(|v| v.parse().ok()).unwrap_or(0));
+    .unwrap_or_else(|_| {
+      extract_value_near_name(html, "read-status-book-num-of-pages")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+    });
 
   let progress_type = Selector::parse(".read-status-progress-type option[selected]")
     .ok()
@@ -1016,14 +1166,8 @@ pub fn update_status(book_id: &str, status_id: u8) -> Result<UserBook> {
   let (_html, data) = fetch_page_data(book_id)?;
   let status_str = status_to_str(status_id);
 
-  let fields = vec![
-    ("authenticity_token", data.csrf.as_str()),
-    ("book_id", book_id),
-    ("status", status_str),
-  ];
-
   let path = format!("/update-status.js?book_id={book_id}&status={status_str}");
-  post_form(&path, &fields[..1])?;
+  post_form(&path, &[("authenticity_token", data.csrf.as_str())])?;
 
   // Re-fetch to return current state.
   parse_user_book(book_id, &get(&format!("/books/{book_id}"))?)
@@ -1049,14 +1193,17 @@ pub fn update_progress(book_id: &str, progress_type: &str, value: u32) -> Result
 
   let value_str = value.to_string();
 
-  post_form("/update-progress", &[
-    ("authenticity_token", &data.csrf),
-    ("read_status[progress_number]", &value_str),
-    ("read_status[progress_type]", progress_type),
-    ("read_status[book_num_of_pages]", &data.book_pages),
-    ("book_id", book_id),
-    ("on_book_page", "true"),
-  ])?;
+  post_form(
+    "/update-progress",
+    &[
+      ("authenticity_token", &data.csrf),
+      ("read_status[progress_number]", &value_str),
+      ("read_status[progress_type]", progress_type),
+      ("read_status[book_num_of_pages]", &data.book_pages),
+      ("book_id", book_id),
+      ("on_book_page", "true"),
+    ],
+  )?;
 
   parse_user_book(book_id, &get(&format!("/books/{book_id}"))?)
 }
@@ -1073,22 +1220,25 @@ pub fn insert_journal(book_id: &str, note: &str, progress: u32, progress_type: &
   let month = now.format("%m").to_string();
   let year = now.format("%Y").to_string();
 
-  post_form("/update-progress-with-note", &[
-    ("authenticity_token", &data.csrf),
-    ("progress_update_date[day]", &day),
-    ("progress_update_date[month]", &month),
-    ("progress_update_date[year]", &year),
-    ("progress_minutes", ""),
-    ("progress_number", &progress_str),
-    ("progress_type", progress_type),
-    ("last_reached_pages", &data.last_pages),
-    ("book_num_of_pages", &data.book_pages),
-    ("last_reached_percent", &data.last_percent),
-    ("note", note),
-    ("book_id", book_id),
-    ("return_to", ""),
-    ("button", ""),
-  ])?;
+  post_form(
+    "/update-progress-with-note",
+    &[
+      ("authenticity_token", &data.csrf),
+      ("progress_update_date[day]", &day),
+      ("progress_update_date[month]", &month),
+      ("progress_update_date[year]", &year),
+      ("progress_minutes", ""),
+      ("progress_number", &progress_str),
+      ("progress_type", progress_type),
+      ("last_reached_pages", &data.last_pages),
+      ("book_num_of_pages", &data.book_pages),
+      ("last_reached_percent", &data.last_percent),
+      ("note", note),
+      ("book_id", book_id),
+      ("return_to", ""),
+      ("button", ""),
+    ],
+  )?;
 
   Ok(())
 }
@@ -1096,6 +1246,7 @@ pub fn insert_journal(book_id: &str, note: &str, progress: u32, progress_type: &
 /// Submits a new review to StoryGraph via POST /reviews.
 /// Rating is split: 4.75 → stars_integer=4, stars_decimal=75.
 /// mood_ids are the StoryGraph integer IDs 1–14.
+#[allow(clippy::too_many_arguments)] // maps a form with 10 semantically-distinct fields
 pub fn submit_review(
   book_id: &str,
   rating: Option<f32>,
@@ -1113,14 +1264,24 @@ pub fn submit_review(
   let book_uuid = book_id;
 
   // Fetch /reviews/new for a CSRF token scoped to the review form.
-  let form_html = get(&format!("/reviews/new?book_id={book_uuid}&return_to=%2Fbooks%2F{book_uuid}"))?;
+  let form_html = get(&format!(
+    "/reviews/new?book_id={book_uuid}&return_to=%2Fbooks%2F{book_uuid}"
+  ))?;
   let csrf = csrf_token(&form_html).context("Could not find CSRF token on reviews/new page")?;
 
   let (stars_int, stars_dec) = match rating {
     Some(r) if r > 0.0 => {
       let int_part = r.floor() as u8;
       let frac = r - int_part as f32;
-      let dec = if frac < 0.13 { String::new() } else if frac < 0.38 { "25".into() } else if frac < 0.63 { "5".into() } else { "75".into() };
+      let dec = if frac < 0.13 {
+        String::new()
+      } else if frac < 0.38 {
+        "25".into()
+      } else if frac < 0.63 {
+        "5".into()
+      } else {
+        "75".into()
+      };
       (int_part.to_string(), dec)
     }
     _ => (String::new(), String::new()),
@@ -1143,11 +1304,26 @@ pub fn submit_review(
     ("review[book_id]".into(), book_uuid.to_string()),
     ("return_to".into(), return_to),
     ("review[pace]".into(), pace.to_owned()),
-    ("review[character_or_plot_driven]".into(), character_or_plot_driven.to_owned()),
-    ("review[strong_character_development]".into(), strong_character_development.to_owned()),
-    ("review[loveable_characters]".into(), loveable_characters.to_owned()),
-    ("review[diverse_characters]".into(), diverse_characters.to_owned()),
-    ("review[flawed_characters]".into(), flawed_characters.to_owned()),
+    (
+      "review[character_or_plot_driven]".into(),
+      character_or_plot_driven.to_owned(),
+    ),
+    (
+      "review[strong_character_development]".into(),
+      strong_character_development.to_owned(),
+    ),
+    (
+      "review[loveable_characters]".into(),
+      loveable_characters.to_owned(),
+    ),
+    (
+      "review[diverse_characters]".into(),
+      diverse_characters.to_owned(),
+    ),
+    (
+      "review[flawed_characters]".into(),
+      flawed_characters.to_owned(),
+    ),
     ("review[themes]".into(), String::new()),
     ("review[content_warning_description]".into(), String::new()),
     ("button".into(), String::new()),
@@ -1170,7 +1346,8 @@ pub fn list_editions(book_id: &str, reading_format: i32, language: &str) -> Resu
 
   // Diagnostic: log what selectors actually hit so we can tune if the page structure differs.
   let pane_sel = Selector::parse(".book-pane").expect("valid selector");
-  let title_container_sel = Selector::parse(".book-title-author-and-series").expect("valid selector");
+  let title_container_sel =
+    Selector::parse(".book-title-author-and-series").expect("valid selector");
   let pane_count = doc.select(&pane_sel).count();
   let title_count = doc.select(&title_container_sel).count();
   debug_log!(
@@ -1240,12 +1417,15 @@ pub fn list_editions(book_id: &str, reading_format: i32, language: &str) -> Resu
 
     // Page count from "X pages" text
     let pane_text = pane.text().collect::<String>();
-    for (a, b) in pane_text.split_whitespace().zip(pane_text.split_whitespace().skip(1)) {
-      if b == "pages" {
-        if let Ok(n) = a.parse::<u32>() {
-          pages = Some(n);
-          break;
-        }
+    for (a, b) in pane_text
+      .split_whitespace()
+      .zip(pane_text.split_whitespace().skip(1))
+    {
+      if b == "pages"
+        && let Ok(n) = a.parse::<u32>()
+      {
+        pages = Some(n);
+        break;
       }
     }
 
@@ -1275,30 +1455,41 @@ pub fn list_editions(book_id: &str, reading_format: i32, language: &str) -> Resu
 
   let is_digital = |f: &str| {
     let f = f.to_lowercase();
-    f.contains("ebook") || f.contains("e-book") || f.contains("epub")
-      || f.contains("kindle") || f.contains("digital") || f.contains("mobi")
+    f.contains("ebook")
+      || f.contains("e-book")
+      || f.contains("epub")
+      || f.contains("kindle")
+      || f.contains("digital")
+      || f.contains("mobi")
       || f.contains("pdf")
   };
 
   let editions: Vec<Edition> = editions
     .into_iter()
-    .filter(|e| if reading_format == READING_FORMAT_PRINT {
-      !is_digital(&e.format)
-    } else if reading_format == READING_FORMAT_EBOOK {
-      is_digital(&e.format)
-    } else {
-      true
+    .filter(|e| {
+      if reading_format == READING_FORMAT_PRINT {
+        !is_digital(&e.format)
+      } else if reading_format == READING_FORMAT_EBOOK {
+        is_digital(&e.format)
+      } else {
+        true
+      }
     })
     .filter(|e| language.is_empty() || e.language.eq_ignore_ascii_case(language))
     .collect();
 
-  debug_log!("list_editions({book_id}): returning {} editions (format={reading_format}, lang={language:?})", editions.len());
+  debug_log!(
+    "list_editions({book_id}): returning {} editions (format={reading_format}, lang={language:?})",
+    editions.len()
+  );
   Ok(editions)
 }
 
 /// Returns what fraction of the meaningful words in `query_title` appear in `result_title`.
 pub fn title_match_score(query_title: &str, result_title: &str) -> f32 {
-  const STOPS: &[&str] = &["the", "a", "an", "of", "in", "by", "to", "and", "or", "for", "at", "its", "is"];
+  const STOPS: &[&str] = &[
+    "the", "a", "an", "of", "in", "by", "to", "and", "or", "for", "at", "its", "is",
+  ];
 
   let tokenize = |s: &str| -> Vec<String> {
     s.to_lowercase()
@@ -1306,7 +1497,11 @@ pub fn title_match_score(query_title: &str, result_title: &str) -> f32 {
       // survive as their own tokens instead of vanishing as delimiter characters -
       // otherwise titles that only differ by a number score as identical matches.
       .split(|c: char| !c.is_alphanumeric())
-      .filter(|w| !w.is_empty() && !STOPS.contains(w) && (w.len() > 1 || w.chars().all(|c| c.is_ascii_digit())))
+      .filter(|w| {
+        !w.is_empty()
+          && !STOPS.contains(w)
+          && (w.len() > 1 || w.chars().all(|c| c.is_ascii_digit()))
+      })
       .map(str::to_owned)
       .collect()
   };
@@ -1316,8 +1511,12 @@ pub fn title_match_score(query_title: &str, result_title: &str) -> f32 {
     return 0.0;
   }
 
-  let result_words: std::collections::HashSet<String> = tokenize(result_title).into_iter().collect();
-  let matches = query_words.iter().filter(|w| result_words.contains(*w)).count();
+  let result_words: std::collections::HashSet<String> =
+    tokenize(result_title).into_iter().collect();
+  let matches = query_words
+    .iter()
+    .filter(|w| result_words.contains(*w))
+    .count();
   matches as f32 / query_words.len() as f32
 }
 
@@ -1331,8 +1530,8 @@ pub fn find_on_shelf(query_title: &str) -> Result<Option<(String, u32)>> {
   let html = get(&format!("/currently-reading/{}", user.slug))?;
   let doc = Html::parse_document(&html);
 
-  let pane_sel     = Selector::parse(".book-pane").expect("valid");
-  let title_sel    = Selector::parse("h3.font-bold a").expect("valid");
+  let pane_sel = Selector::parse(".book-pane").expect("valid");
+  let title_sel = Selector::parse("h3.font-bold a").expect("valid");
   let progress_sel = Selector::parse("input.read-status-last-reached-percent").expect("valid");
 
   let mut best: Option<(String, f32, u32)> = None;
@@ -1376,13 +1575,16 @@ pub fn find_on_shelf(query_title: &str) -> Result<Option<(String, u32)>> {
         })
         .unwrap_or(0);
 
-      if best.as_ref().map_or(true, |(_, s, _)| score > *s) {
+      if best.as_ref().is_none_or(|(_, s, _)| score > *s) {
         best = Some((book_id, score, progress));
       }
     }
   }
 
-  debug_log!("find_on_shelf({query_title:?}): {:?}", best.as_ref().map(|(id, s, p)| (id, s, p)));
+  debug_log!(
+    "find_on_shelf({query_title:?}): {:?}",
+    best.as_ref().map(|(id, s, p)| (id, s, p))
+  );
   Ok(best.map(|(id, _, progress)| (id, progress)))
 }
 
@@ -1424,11 +1626,13 @@ pub fn prefer_digital_edition(book_id: &str) -> Result<String> {
   }
 
   let editions = list_editions(book_id, 0, "")?;
-  Ok(editions
-    .into_iter()
-    .find(|e| e.format.to_lowercase().contains("digital"))
-    .map(|e| e.book_id)
-    .unwrap_or_else(|| book_id.to_owned()))
+  Ok(
+    editions
+      .into_iter()
+      .find(|e| e.format.to_lowercase().contains("digital"))
+      .map(|e| e.book_id)
+      .unwrap_or_else(|| book_id.to_owned()),
+  )
 }
 
 /// Switches the user's linked edition from `from_id` to `to_id`.
@@ -1468,12 +1672,15 @@ pub fn switch_edition(from_id: &str, to_id: &str) -> Result<bool> {
     }
   }
 
-  post_form("/switch-editions", &[
-    ("authenticity_token", &form_csrf),
-    ("from_book_id", &true_from_id),
-    ("to_book_id", to_id),
-    ("button", ""),
-  ])?;
+  post_form(
+    "/switch-editions",
+    &[
+      ("authenticity_token", &form_csrf),
+      ("from_book_id", &true_from_id),
+      ("to_book_id", to_id),
+      ("button", ""),
+    ],
+  )?;
 
   Ok(true)
 }
@@ -1487,16 +1694,21 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
   let html = get(&format!("/journal?book_id={book_id}"))?;
   let doc = Html::parse_document(&html);
 
-  let entry_sel      = Selector::parse(".journal-entry-panes > div").expect("valid selector");
-  let date_sel       = Selector::parse("p.font-semibold").expect("valid selector");
-  let badge_sel      = Selector::parse("span[title]").expect("valid selector");
-  let progress_sel   = Selector::parse(r#"div[style*="width:"]"#).expect("valid selector");
-  let trix_sel       = Selector::parse("div.trix-content").expect("valid selector");
+  let entry_sel = Selector::parse(".journal-entry-panes > div").expect("valid selector");
+  let date_sel = Selector::parse("p.font-semibold").expect("valid selector");
+  let badge_sel = Selector::parse("span[title]").expect("valid selector");
+  let progress_sel = Selector::parse(r#"div[style*="width:"]"#).expect("valid selector");
+  let trix_sel = Selector::parse("div.trix-content").expect("valid selector");
   let blockquote_sel = Selector::parse("blockquote").expect("valid selector");
-  let note_div_sel   = Selector::parse("div.trix-content > div:not(.trix-content)").expect("valid selector");
+  let note_div_sel =
+    Selector::parse("div.trix-content > div:not(.trix-content)").expect("valid selector");
 
   let all_entries: Vec<_> = doc.select(&entry_sel).collect();
-  debug_log!("list_journal({book_id}): HTML len={}, found {} entries", html.len(), all_entries.len());
+  debug_log!(
+    "list_journal({book_id}): HTML len={}, found {} entries",
+    html.len(),
+    all_entries.len()
+  );
 
   let mut activities = Vec::new();
   let mut prev_progress: u32 = 0;
@@ -1519,7 +1731,8 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
         "user_book_read_finished"
       } else if title.contains("want to read") {
         "status_want_to_read"
-      } else if title.contains("stop") || title.contains("dnf") || title.contains("did not finish") {
+      } else if title.contains("stop") || title.contains("dnf") || title.contains("did not finish")
+      {
         "status_stopped"
       } else {
         "status_read"
@@ -1546,7 +1759,8 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
     // We compare flat text of the whole trix div vs flat text of blockquote
     // descendants — equal means everything is quoted.
     let (entry_text, all_blockquote, quote_text) = if let Some(trix) = el.select(&trix_sel).next() {
-      let flat: String = trix.text()
+      let flat: String = trix
+        .text()
         .map(|t| t.trim())
         .filter(|t| !t.is_empty())
         .collect::<Vec<_>>()
@@ -1555,7 +1769,8 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
       if flat.is_empty() {
         (String::new(), false, None)
       } else {
-        let bq: String = trix.select(&blockquote_sel)
+        let bq: String = trix
+          .select(&blockquote_sel)
           .flat_map(|b| b.text())
           .map(|t| t.trim())
           .filter(|t| !t.is_empty())
@@ -1570,7 +1785,8 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
           (bq, true, None)
         } else {
           // Mixed: blockquote + annotation — put quote in metadata, annotation in entry
-          let non_bq: String = trix.select(&note_div_sel)
+          let non_bq: String = trix
+            .select(&note_div_sel)
             .flat_map(|d| d.text())
             .map(|t| t.trim())
             .filter(|t| !t.is_empty())
@@ -1614,20 +1830,29 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
 }
 
 fn parse_storygraph_date(date_text: &str) -> String {
-  let parts: Vec<&str> = date_text.trim().split_whitespace().collect();
+  let parts: Vec<&str> = date_text.split_whitespace().collect();
   if parts.len() == 3 {
     let day: u32 = parts[0].parse().unwrap_or(1);
     let month: u32 = match parts[1].to_lowercase().as_str() {
-      "january" => 1, "february" => 2, "march" => 3,    "april" => 4,
-      "may" => 5,     "june" => 6,     "july" => 7,     "august" => 8,
-      "september" => 9, "october" => 10, "november" => 11, "december" => 12,
+      "january" => 1,
+      "february" => 2,
+      "march" => 3,
+      "april" => 4,
+      "may" => 5,
+      "june" => 6,
+      "july" => 7,
+      "august" => 8,
+      "september" => 9,
+      "october" => 10,
+      "november" => 11,
+      "december" => 12,
       _ => 0,
     };
     let year: i32 = parts[2].parse().unwrap_or(2024);
-    if month > 0 {
-      if let Some(d) = chrono::NaiveDate::from_ymd_opt(year, month, day) {
-        return format!("{}T12:00:00Z", d.format("%Y-%m-%d"));
-      }
+    if month > 0
+      && let Some(d) = chrono::NaiveDate::from_ymd_opt(year, month, day)
+    {
+      return format!("{}T12:00:00Z", d.format("%Y-%m-%d"));
     }
   }
   date_text.to_owned()
@@ -1703,7 +1928,10 @@ pub fn login(email: &str, password: &str) -> Result<LoginResult> {
     bail!("Login did not return a session cookie.");
   }
 
-  Ok(LoginResult { session_cookie, remember_user_token })
+  Ok(LoginResult {
+    session_cookie,
+    remember_user_token,
+  })
 }
 
 #[cfg(test)]
@@ -1752,8 +1980,14 @@ mod tests {
 
   #[test]
   fn parse_storygraph_date_full_english_month() {
-    assert_eq!(parse_storygraph_date("17 October 2026"), "2026-10-17T12:00:00Z");
-    assert_eq!(parse_storygraph_date("1 January 2024"), "2024-01-01T12:00:00Z");
+    assert_eq!(
+      parse_storygraph_date("17 October 2026"),
+      "2026-10-17T12:00:00Z"
+    );
+    assert_eq!(
+      parse_storygraph_date("1 January 2024"),
+      "2024-01-01T12:00:00Z"
+    );
   }
 
   #[test]
@@ -1778,4 +2012,3 @@ mod tests {
     assert_eq!(progress_percent_from_edit_progress("no bar here"), None);
   }
 }
-

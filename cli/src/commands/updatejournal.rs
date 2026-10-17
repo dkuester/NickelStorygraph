@@ -7,11 +7,11 @@ use argh::FromArgs;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::json;
 
-use crate::{debug_log, log};
 use crate::config::CONFIG;
+use crate::emit_json;
 use crate::storygraph;
 use crate::utils::{VERSION, book_not_found, normalize_identifiers};
-use crate::emit_json;
+use crate::{debug_log, log};
 
 /// Sync Kobo highlights and notes for a book as StoryGraph journal entries.
 #[derive(FromArgs, PartialEq, Debug)]
@@ -39,7 +39,9 @@ pub fn run(args: UpdateJournal) -> Result<()> {
   } else if let Some(isbn) = isbns.first() {
     storygraph::find_by_isbn(isbn)?
       .map(|b| b.book_id)
-      .unwrap_or_else(|| book_not_found("Couldn't find this book on StoryGraph. Please link book manually."))
+      .unwrap_or_else(|| {
+        book_not_found("Couldn't find this book on StoryGraph. Please link book manually.")
+      })
   } else {
     book_not_found("No ISBN found. Please link book manually.")
   };
@@ -89,9 +91,13 @@ pub fn run(args: UpdateJournal) -> Result<()> {
 // the first sync per book after upgrading re-checks full history — a
 // one-time re-sync is preferable to leaving the clutter behind forever.
 fn cleanup_old_sync_files() {
-  let Ok(exe) = std::env::current_exe() else { return };
+  let Ok(exe) = std::env::current_exe() else {
+    return;
+  };
   let Some(dir) = exe.parent() else { return };
-  let Ok(entries) = fs::read_dir(dir) else { return };
+  let Ok(entries) = fs::read_dir(dir) else {
+    return;
+  };
 
   for entry in entries.flatten() {
     let name = entry.file_name();
@@ -135,8 +141,10 @@ fn save_sync_timestamp(content_id: &str, timestamp: &str) -> Result<()> {
 }
 
 fn query_annotations(content_id: &str, since: &str) -> Result<Vec<(String, String)>> {
-  let conn = Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-    .context(format!("Failed to open database <i>{}</i>", &CONFIG.sqlite_path))?;
+  let conn =
+    Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY).context(
+      format!("Failed to open database <i>{}</i>", CONFIG.sqlite_path),
+    )?;
 
   conn
     .prepare(

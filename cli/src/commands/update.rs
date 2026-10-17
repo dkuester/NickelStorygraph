@@ -40,35 +40,48 @@ pub fn run(args: Update) -> Result<()> {
     // Before doing an ISBN/search lookup, check if the book is already on the user's
     // currently-reading shelf. If so, link to that edition and let the hook ask the
     // user whether to keep StoryGraph's progress or push Kobo's.
-    if let Some((ref title, _)) = meta {
-      if let Ok(Some((shelf_id, shelf_progress))) = storygraph::find_on_shelf(title) {
-        emit_json!("{}", serde_json::json!({
+    if let Some((ref title, _)) = meta
+      && let Ok(Some((shelf_id, shelf_progress))) = storygraph::find_on_shelf(title)
+    {
+      emit_json!(
+        "{}",
+        serde_json::json!({
           "resolved_book_id": shelf_id,
           "needs_shelf_confirmation": true,
           "progress_percent": shelf_progress,
-        }));
-        return Ok(());
+        })
+      );
+      return Ok(());
+    }
+
+    // Try each ISBN first. A genuine "no result" (Ok(None)) falls through to the
+    // title search, but a real error (network, expired session) must propagate —
+    // swallowing it here as "no match" could silently link the wrong book.
+    let mut found = None;
+    for isbn in &isbns {
+      match storygraph::find_by_isbn(isbn)? {
+        Some(result) => {
+          // Reject ISBN results that don't match the Kobo title — the EPUB's ISBN metadata
+          // sometimes points to a different book (e.g. a sampler or wrong edition).
+          if let Some((ref title, _)) = meta
+            && title_match_score(title, &result.title) < 0.3
+          {
+            continue;
+          }
+          found = Some(result);
+          break;
+        }
+        None => continue,
       }
     }
 
-    let found = isbns
-      .iter()
-      .find_map(|isbn| {
-        let result = storygraph::find_by_isbn(isbn).ok().flatten()?;
-        // Reject ISBN results that don't match the Kobo title — the EPUB's ISBN metadata
-        // sometimes points to a different book (e.g. a sampler or wrong edition).
-        if let Some((ref title, _)) = meta {
-          if title_match_score(title, &result.title) < 0.3 {
-            return None;
-          }
-        }
-        Some(result)
-      })
-      .or_else(|| {
-        let (title, author) = meta.as_ref()?;
-        let results = storygraph::search(&format!("{title} {author}")).ok()?;
-        best_title_match(results, title)
-      });
+    if found.is_none()
+      && let Some((title, author)) = meta.as_ref()
+    {
+      // Same rule: a failed search is a real error, not "no results".
+      let results = storygraph::search(&format!("{title} {author}"))?;
+      found = best_title_match(results, title);
+    }
 
     let initial_id = match found {
       Some(book) => book.book_id,
@@ -94,7 +107,11 @@ fn best_title_match(results: Vec<Book>, title: &str) -> Option<Book> {
     .into_iter()
     .filter_map(|book| {
       let score = title_match_score(title, &book.title);
-      if score >= 0.9 { Some((book, score)) } else { None }
+      if score >= 0.9 {
+        Some((book, score))
+      } else {
+        None
+      }
     })
     .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
     .map(|(book, _)| book)
@@ -102,12 +119,18 @@ fn best_title_match(results: Vec<Book>, title: &str) -> Option<Book> {
 
 fn book_title_query(content_id: Option<&str>) -> Option<(String, String)> {
   let content_id = content_id?;
-  let conn = Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+  let conn =
+    Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
   conn
     .query_row(
       "SELECT Title, Attribution FROM content WHERE ContentID = ? LIMIT 1",
       [content_id],
-      |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1).unwrap_or_default())),
+      |row| {
+        Ok((
+          row.get::<_, String>(0)?,
+          row.get::<_, String>(1).unwrap_or_default(),
+        ))
+      },
     )
     .ok()
 }

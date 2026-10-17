@@ -25,8 +25,8 @@ fn isbn_13_check_digit(digits: &[u32]) -> u32 {
 
 fn isbn_10_check_digit(digits: &[u32]) -> u32 {
   let mut sum = 0;
-  for i in 0..9 {
-    sum += digits[i] * (10 - i as u32);
+  for (i, d) in digits.iter().take(9).enumerate() {
+    sum += d * (10 - i as u32);
   }
 
   let sum_m = sum % 11;
@@ -49,7 +49,13 @@ fn digits_to_string(digits: &[u32]) -> String {
 fn string_to_digits(str: &str) -> Vec<u32> {
   str
     .chars()
-    .filter_map(|c| if c == 'X' || c == 'x' { Some(10) } else { c.to_digit(10) })
+    .filter_map(|c| {
+      if c == 'X' || c == 'x' {
+        Some(10)
+      } else {
+        c.to_digit(10)
+      }
+    })
     .collect()
 }
 
@@ -108,26 +114,24 @@ fn get_opf_path(manifest: &str) -> Result<String> {
           xml_version = version;
         }
       }
-      Ok(Event::Empty(e)) => {
-        if e.name().as_ref() == b"rootfile" {
-          let media_type = e
-            .try_get_attribute("media-type")
-            .context("Failed to decode <i>media-type</i> attribute")?;
-          if let Some(media_type) = media_type
-            && media_type
+      Ok(Event::Empty(e)) if e.name().as_ref() == b"rootfile" => {
+        let media_type = e
+          .try_get_attribute("media-type")
+          .context("Failed to decode <i>media-type</i> attribute")?;
+        if let Some(media_type) = media_type
+          && media_type
+            .normalized_value(xml_version)
+            .context("Failed to decode <i>media-type</i> attribute value")?
+            == "application/oebps-package+xml"
+        {
+          return Ok(
+            e.try_get_attribute("full-path")
+              .context("Failed to decode <i>full-path</i> attribute")?
+              .context("Failed to find <i>full-path</i> attribute")?
               .normalized_value(xml_version)
-              .context("Failed to decode <i>media-type</i> attribute value")?
-              == "application/oebps-package+xml"
-          {
-            return Ok(
-              e.try_get_attribute("full-path")
-                .context("Failed to decode <i>full-path</i> attribute")?
-                .context("Failed to find <i>full-path</i> attribute")?
-                .normalized_value(xml_version)
-                .context("Failed to decode <i>full-path</i> attribute value")?
-                .to_string(),
-            );
-          }
+              .context("Failed to decode <i>full-path</i> attribute value")?
+              .to_string(),
+          );
         }
       }
       _ => (),
@@ -179,9 +183,12 @@ fn read_opf(opf: &str) -> Result<(Vec<String>, Vec<String>)> {
         State::Metadata
       }
       (State::Metadata, Event::End(e)) if e.local_name().as_ref() == b"metadata" => State::Start,
-      (State::Identifier(s), Event::Text(e)) => {
-        State::Identifier(s + e.decode().context("Failed to decode identifier text")?.as_ref())
-      }
+      (State::Identifier(s), Event::Text(e)) => State::Identifier(
+        s + e
+          .decode()
+          .context("Failed to decode identifier text")?
+          .as_ref(),
+      ),
       (State::Start, Event::Start(e)) if e.local_name().as_ref() == b"manifest" => State::Manifest,
       (State::Manifest, Event::Empty(e)) if e.local_name().as_ref() == b"item" => {
         if let Some(media_type) = e
@@ -220,6 +227,7 @@ fn read_opf(opf: &str) -> Result<(Vec<String>, Vec<String>)> {
 }
 
 fn read_item(item: &str) -> Result<Vec<String>> {
+  #[allow(clippy::invisible_characters)] // intentional soft hyphens/nbsp in extracted ISBN text
   static RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
     Regex::new(
       r"(?:-10 |-13 )?((?:[‐-―\-\.\^ \t ­−]?[0-9]){13}|(?:[‐-―\-\.\^ \t ­−]?[0-9]){9}[‐-―\-\.\^ \t ­−]]?[0-9xX])",
@@ -267,7 +275,8 @@ fn read_item(item: &str) -> Result<Vec<String>> {
 }
 
 fn read_epub_isbn(content_id: &str) -> Result<Vec<String>> {
-  let file = File::open(Path::new(&content_id[7..])).context("Failed to open file")?;
+  let path = content_id.strip_prefix("file://").unwrap_or(content_id);
+  let file = File::open(Path::new(path)).context("Failed to open file")?;
   let mut archive = ZipArchive::new(file).context("Failed to parse file as archive")?;
 
   let mut buf = String::new();
@@ -302,7 +311,10 @@ fn read_epub_isbn(content_id: &str) -> Result<Vec<String>> {
       buf.clear();
       archive
         .by_path(opf_dir.join(&items[i]))
-        .context(format!("Failed to open OEBPS root file <i>{}</i>", &items[i]))?
+        .context(format!(
+          "Failed to open OEBPS root file <i>{}</i>",
+          items[i]
+        ))?
         .read_to_string(&mut buf)
         .context("Failed to read OEBPS root file")?;
       isbn = read_item(&buf)?;
@@ -325,7 +337,7 @@ fn read_sqlite_isbn(content_id: &str) -> Result<Vec<String>> {
   let isbn = Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
     .context(format!(
       "Failed to connect to the database <i>{}</i>",
-      &CONFIG.sqlite_path
+      CONFIG.sqlite_path
     ))?
     .prepare(
       "SELECT ISBN
@@ -373,7 +385,10 @@ mod tests {
 
   #[test]
   fn isbn13_check_digit_known_values() {
-    assert_eq!(isbn_13_check_digit(&[9, 7, 8, 0, 3, 0, 6, 4, 0, 6, 1, 5]), 7);
+    assert_eq!(
+      isbn_13_check_digit(&[9, 7, 8, 0, 3, 0, 6, 4, 0, 6, 1, 5]),
+      7
+    );
     assert_eq!(isbn_10_check_digit(&[0, 3, 0, 6, 4, 0, 6, 1, 5]), 2);
   }
 
@@ -400,8 +415,7 @@ mod tests {
   #[test]
   fn normalize_isbn_rejects_invalid() {
     assert_eq!(normalize_isbn("9780306406158"), None); // bad check digit
-    assert_eq!(normalize_isbn("1234567890"), None);    // invalid ISBN-10 check
+    assert_eq!(normalize_isbn("1234567890"), None); // invalid ISBN-10 check
     assert_eq!(normalize_isbn("notanisbn"), None);
   }
 }
-

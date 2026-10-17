@@ -4,7 +4,10 @@ use std::panic;
 use crate::commands::listbookmarks;
 use crate::commands::listeditions;
 use crate::commands::listreading;
-use crate::commands::{getfeed, getgoals, getstreak, getuser, getuserbook, insertjournal, listjournal, login, search, setuserbook, switchedition, syncedition, update, updatejournal};
+use crate::commands::{
+  getfeed, getgoals, getstreak, getuser, getuserbook, insertjournal, listjournal, login, search,
+  setuserbook, switchedition, syncedition, update, updatejournal,
+};
 use crate::config::CONFIG;
 use crate::utils::{UserError, VERSION, write_logfile};
 
@@ -64,7 +67,7 @@ fn main() {
   let args: Arguments = argh::from_env();
 
   if args.version {
-    println!("{}", &*VERSION);
+    println!("{}", *VERSION);
     return;
   }
 

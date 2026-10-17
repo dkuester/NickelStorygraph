@@ -56,7 +56,8 @@ macro_rules! emit_json {
   }};
 }
 
-pub static VERSION: LazyLock<&str> = LazyLock::new(|| option_env!("VERSION").unwrap_or(env!("CARGO_PKG_VERSION")));
+pub static VERSION: LazyLock<&str> =
+  LazyLock::new(|| option_env!("VERSION").unwrap_or(env!("CARGO_PKG_VERSION")));
 
 // In-memory buffer for the current CLI invocation; flushed to disk by write_logfile().
 static LOG: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new(String::new()));
@@ -100,7 +101,10 @@ pub fn write_logfile() {
 
 /// Returns `(book_slug, isbns)`. If `linked_id` is set, returns it directly.
 /// Otherwise extracts ISBNs from the Kobo content ID (EPUB path).
-pub fn normalize_identifiers(linked_id: Option<String>, content_id: Option<&str>) -> Result<(String, Vec<String>)> {
+pub fn normalize_identifiers(
+  linked_id: Option<String>,
+  content_id: Option<&str>,
+) -> Result<(String, Vec<String>)> {
   match (linked_id, content_id) {
     (Some(id), _) if !id.is_empty() => Ok((id, Vec::new())),
     (_, Some(content_id)) => Ok((String::new(), get_isbn(content_id))),

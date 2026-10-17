@@ -29,7 +29,9 @@ pub fn run(args: GetUserBook) -> Result<()> {
   } else if let Some(isbn) = isbns.first() {
     storygraph::find_by_isbn(isbn)?
       .map(|b| b.book_id)
-      .unwrap_or_else(|| book_not_found("Couldn't find this book on StoryGraph. Please link book manually."))
+      .unwrap_or_else(|| {
+        book_not_found("Couldn't find this book on StoryGraph. Please link book manually.")
+      })
   } else {
     book_not_found("No ISBN found. Please link book manually.")
   };
