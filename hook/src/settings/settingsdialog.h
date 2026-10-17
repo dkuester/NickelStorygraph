@@ -26,6 +26,7 @@ public Q_SLOTS:
   void setCompletionPrompt(bool value);
   void setDebug(bool value);
   void saveLogs();
+  void openLogin();
 
   void setHomeMenuEnabled(bool value);
   void setHomeMenuReading(bool value);

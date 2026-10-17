@@ -113,6 +113,10 @@ CLI *CLI::update(int percentage, Options options) {
   return new CLI(arguments, options);
 }
 
+CLI *CLI::login(QString email, QString password, Options options) {
+  return new CLI({"login", email, password}, options);
+}
+
 QStringList CLI::getIdentifier(Options options) {
   QString contentId = options.contentId.isEmpty() ? SyncController::getInstance()->contentId : options.contentId;
   QStringList identifiers = {"--content-id", contentId};

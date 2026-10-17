@@ -40,6 +40,7 @@ public:
   static CLI *search(QString query, int limit, int page, Options options = Options());
   static CLI *syncEdition(Options options = Options());
   static CLI *update(int percentage, Options options = Options());
+  static CLI *login(QString email, QString password, Options options = Options());
 
 public Q_SLOTS:
   void networkConnected();

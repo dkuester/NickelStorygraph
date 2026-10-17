@@ -4,7 +4,7 @@ use std::panic;
 use crate::commands::listbookmarks;
 use crate::commands::listeditions;
 use crate::commands::listreading;
-use crate::commands::{getfeed, getgoals, getstreak, getuser, getuserbook, insertjournal, listjournal, search, setuserbook, switchedition, syncedition, update, updatejournal};
+use crate::commands::{getfeed, getgoals, getstreak, getuser, getuserbook, insertjournal, listjournal, login, search, setuserbook, switchedition, syncedition, update, updatejournal};
 use crate::config::CONFIG;
 use crate::utils::{VERSION, write_logfile};
 
@@ -42,6 +42,7 @@ enum Commands {
   ListEditions(listeditions::ListEditions),
   ListJournal(listjournal::ListJournal),
   ListReading(listreading::ListReading),
+  Login(login::Login),
   Search(search::Search),
   SetUserBook(setuserbook::SetUserBook),
   SwitchEdition(switchedition::SwitchEdition),
@@ -81,6 +82,7 @@ fn main() {
     Commands::ListEditions(args) => listeditions::run(args),
     Commands::ListJournal(args) => listjournal::run(args),
     Commands::ListReading(args) => listreading::run(args),
+    Commands::Login(args) => login::run(args),
     Commands::Search(args) => search::run(args),
     Commands::SetUserBook(args) => setuserbook::run(args),
     Commands::SwitchEdition(args) => switchedition::run(args),
