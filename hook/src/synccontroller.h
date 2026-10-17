@@ -34,8 +34,6 @@ Q_SIGNALS:
 private:
   SyncController(QObject *parent = nullptr);
 
-  static SyncController *instance;
-
   PowerTimer *timer = nullptr;
   SyncQueue *queue = new SyncQueue(this);
 

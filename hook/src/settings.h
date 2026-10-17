@@ -39,6 +39,8 @@ public:
   QString getRememberToken();
   QString getLanguage();
 
+  void setUserSlug(QString value);
+
   void setSessionCookie(QString value);
   void setRememberToken(QString value);
 
@@ -77,8 +79,6 @@ public Q_SLOTS:
 
 private:
   Settings(QObject *parent = nullptr);
-
-  static Settings *instance;
 
   QSettings *internal = nullptr;
   QSettings *config = nullptr;

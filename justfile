@@ -87,6 +87,14 @@ test:
   python3 test/check_symbols.py
   sh test/check_artifacts.sh
 
+# Static checks (host target): rustfmt + clippy (warnings as errors) + unit tests.
+[group('test')]
+[working-directory('cli')]
+lint:
+  cargo fmt --check
+  cargo clippy -- -D warnings
+  cargo test
+
 # Run `logread` over ssh
 [group('helpers')]
 logs:

@@ -382,7 +382,16 @@ QFrame *SettingsDialog::buildAdvanced() {
   return frame;
 }
 
-void SettingsDialog::setUsername(QJsonObject doc) { username->setValue(doc.value("username").toString().prepend("@")); }
+void SettingsDialog::setUsername(QJsonObject doc) {
+  username->setValue(doc.value("username").toString().prepend("@"));
+
+  // Cache the slug so the CLI can skip the homepage scrape on later get-user
+  // calls (get_user() only re-scrapes when config.ini's user_slug is empty).
+  QString slug = doc.value("slug").toString();
+  if (!slug.isEmpty()) {
+    Settings::getInstance()->setUserSlug(slug);
+  }
+}
 
 void SettingsDialog::setAutoSyncDefault(bool value) { Settings::getInstance()->setAutoSyncDefault(value); }
 

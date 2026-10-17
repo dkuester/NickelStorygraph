@@ -11,14 +11,9 @@
 #include "synccontroller.h"
 #include "translations.h"
 
-Settings *Settings::instance = nullptr;
-
 Settings *Settings::getInstance() {
-  if (instance == nullptr) {
-    instance = new Settings();
-  };
-
-  return instance;
+  static Settings instance;
+  return &instance;
 };
 
 Settings::Settings(QObject *parent)
@@ -118,6 +113,11 @@ void Settings::setSessionCookie(QString value) {
 
 void Settings::setRememberToken(QString value) {
   config->setValue("remember_user_token", value);
+  config->sync();
+}
+
+void Settings::setUserSlug(QString value) {
+  config->setValue("user_slug", value);
   config->sync();
 }
 

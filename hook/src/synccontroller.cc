@@ -8,14 +8,9 @@
 #include "settings.h"
 #include "synccontroller.h"
 
-SyncController *SyncController::instance = nullptr;
-
 SyncController *SyncController::getInstance() {
-  if (instance == nullptr) {
-    instance = new SyncController();
-  };
-
-  return instance;
+  static SyncController instance;
+  return &instance;
 };
 
 SyncController::SyncController(QObject *parent) : QObject(parent) {};

@@ -1243,6 +1243,14 @@ pub fn insert_journal(book_id: &str, note: &str, progress: u32, progress_type: &
   Ok(())
 }
 
+/// HTML-escapes `&`, `<`, `>` so plain text can be embedded in the review form
+/// body without being interpreted as markup.
+fn escape_html(s: &str) -> String {
+  s.replace('&', "&amp;")
+    .replace('<', "&lt;")
+    .replace('>', "&gt;")
+}
+
 /// Submits a new review to StoryGraph via POST /reviews.
 /// Rating is split: 4.75 → stars_integer=4, stars_decimal=75.
 /// mood_ids are the StoryGraph integer IDs 1–14.
@@ -1290,9 +1298,10 @@ pub fn submit_review(
   let explanation_html = if explanation.is_empty() {
     String::new()
   } else if explanation.starts_with('<') {
+    // User supplied their own markup — pass through untouched.
     explanation.to_owned()
   } else {
-    format!("<div>{}</div>", explanation)
+    format!("<div>{}</div>", escape_html(explanation))
   };
 
   let return_to = format!("/books/{book_uuid}");
@@ -1834,18 +1843,18 @@ fn parse_storygraph_date(date_text: &str) -> String {
   if parts.len() == 3 {
     let day: u32 = parts[0].parse().unwrap_or(1);
     let month: u32 = match parts[1].to_lowercase().as_str() {
-      "january" => 1,
-      "february" => 2,
-      "march" => 3,
-      "april" => 4,
-      "may" => 5,
-      "june" => 6,
-      "july" => 7,
-      "august" => 8,
-      "september" => 9,
-      "october" => 10,
-      "november" => 11,
-      "december" => 12,
+      "january" | "januar" | "jan" => 1,
+      "february" | "februar" | "feb" => 2,
+      "march" | "märz" | "maerz" | "mar" => 3,
+      "april" | "apr" => 4,
+      "may" | "mai" => 5,
+      "june" | "juni" | "jun" => 6,
+      "july" | "juli" | "jul" => 7,
+      "august" | "aug" => 8,
+      "september" | "sep" | "sept" => 9,
+      "october" | "oktober" | "okt" | "oct" => 10,
+      "november" | "nov" => 11,
+      "december" | "dezember" | "dez" | "dec" => 12,
       _ => 0,
     };
     let year: i32 = parts[2].parse().unwrap_or(2024);
@@ -1993,6 +2002,21 @@ mod tests {
   #[test]
   fn parse_storygraph_date_garbage_passthrough() {
     assert_eq!(parse_storygraph_date("some day ago"), "some day ago");
+  }
+
+  #[test]
+  fn parse_storygraph_date_german_month_and_abbreviation() {
+    assert_eq!(
+      parse_storygraph_date("17 Oktober 2026"),
+      "2026-10-17T12:00:00Z"
+    );
+    assert_eq!(parse_storygraph_date("5 Dec 2020"), "2020-12-05T12:00:00Z");
+  }
+
+  #[test]
+  fn escape_html_escapes_markup_chars() {
+    assert_eq!(escape_html("<3 & >"), "&lt;3 &amp; &gt;");
+    assert_eq!(escape_html("plain"), "plain");
   }
 
   #[test]

@@ -134,7 +134,7 @@ The config file lives at `.adds/NickelStorygraph/config.ini` on the Kobo's inter
 session_cookie = <value of _storygraph_session>
 remember_user_token = <value of remember_user_token>
 
-; Optional — avoids a homepage request on every sync
+; Optional — cached automatically; set manually to skip the one-time homepage lookup
 user_slug = yourname
 ```
 
@@ -233,6 +233,8 @@ Other useful commands:
 | `just build-cli` | Cross-compile the Rust CLI only |
 | `just format` | Format all source files |
 | `just clean` | Remove build artifacts |
+| `just lint` | Run rustfmt + clippy + unit tests (static checks) |
+| `just test` | Check hook symbols against the 5.18 firmware + verify build artifacts |
 | `just logs` | Stream logs from the Kobo over SSH (requires `KOBO_SERVER` and `KOBO_PASSWORD` env vars) |
 
 ## Architecture - Developer Info
