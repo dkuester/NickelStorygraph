@@ -1,32 +1,12 @@
 # NickelStorygraph
 
-## Announcement - Please Read!
+## About
 
-Hi Fellow Redditors! It's come to my attention that this project has been shared on both Mobileread and Reddit over the last few weeks and while I'm very happy that others are getting use out of one of my personal pet projects I just want to set some expectations around support and updates. I built this project for myself because I often forget to update my progress on Storygraph and I knew there had to be a way to build an integration despite the lack of public API. 
-
-At this point I didn't intend for this to be used by the masses, just a few friends who I convinced to come to the Kobo / StoryGraph dark side from Kindle. While all are absolutely welcome to use it in its current state, there may still be some issues and bugs that I haven't come across yet and support for resolution or feature requests etc will be very limited.
-
-Thanks for your understanding! 
-
-Victoria 
-
-<br>
-
-## About 
-A Kobo eReader plugin that integrates with [StoryGraph](https://app.thestorygraph.com). Syncs your reading progress automatically, logs highlights and notes as journal entries, and lets you view common StorygGraph features directly from your device.
+A Kobo eReader plugin that integrates with [StoryGraph](https://app.thestorygraph.com). Syncs your reading progress automatically, logs highlights and notes as journal entries, and lets you view common StoryGraph features directly from your device.
 
 > **Note:** Wi-Fi is required for all StoryGraph features. Because StoryGraph has no public API, this plugin works by scraping the website directly — it may break if StoryGraph makes changes to their UI.
 
-## Why this fork
-
-Upstream NickelStorygraph targets Kobo firmware 4.x, which runs Qt 5.2.1. Kobo/Tolino firmware **5.18** rebased Nickel onto **Qt 6.5.2**, which broke every native plugin. This fork ports the plugin to Qt 6 so it runs on firmware 5.18 and 6.0:
-
-- three `libnickel` symbols changed ABI (verified against `libnickel.so.1.0.0`; see `test/libnickel-5.18.syms.gz`),
-- Qt 6 turned `Qt::WindowType` into an `enum class`, breaking a constructor call,
-- NickelHook needed a Qt 6 port (Failsafe fix and hook chaining), and
-- packaging and the toolchain changed (`Kobo.tgz` instead of `KoboRoot.tgz`; a Qt 6.5.2 cross toolchain instead of NickelTC).
-
-For firmware 4.x, use the upstream `main` branch. See [Acknowledgements](#acknowledgements) for the people whose work this fork builds on.
+## Contents
 
 - [Why this fork](#why-this-fork)
 - [Features](#features)
@@ -38,7 +18,19 @@ For firmware 4.x, use the upstream `main` branch. See [Acknowledgements](#acknow
 - [Troubleshooting](#troubleshooting)
 - [Building - Developer Info](#building---developer-info)
 - [Architecture - Developer Info](#architecture---developer-info)
+- [Roadmap](ROADMAP.md)
 - [Acknowledgements](#acknowledgements)
+
+## Why this fork
+
+Upstream NickelStorygraph targets Kobo firmware 4.x, which runs Qt 5.2.1. Kobo/Tolino firmware **5.18** rebased Nickel onto **Qt 6.5.2**, which broke every native plugin. This fork ports the plugin to Qt 6 so it runs on firmware 5.18 and 6.0:
+
+- three `libnickel` symbols changed ABI (verified against `libnickel.so.1.0.0`; see `test/libnickel-5.18.syms.gz`),
+- Qt 6 turned `Qt::WindowType` into an `enum class`, breaking a constructor call,
+- NickelHook needed a Qt 6 port (Failsafe fix and hook chaining), and
+- packaging and the toolchain changed (`Kobo.tgz` instead of `KoboRoot.tgz`; a Qt 6.5.2 cross toolchain instead of NickelTC).
+
+For firmware 4.x, use the upstream `main` branch. See [Acknowledgements](#acknowledgements) for the people whose work this fork builds on.
 
 ## Features
 
@@ -254,3 +246,13 @@ This fork builds on the work of the following people — without them, none of t
 - **Nico Verbruggen (nicoverbruggen)** — author of [Kobalt](https://github.com/nicoverbruggen/kobalt) and the [Qt 6 NickelMenu port](https://github.com/nicoverbruggen/NickelMenu) (branch `qt6-support`). This fork uses his [NickelHook Qt 6 port](https://github.com/nicoverbruggen/NickelHook) (Failsafe fix and hook chaining) and the Qt 6.5.2 toolchain definition under `.forgejo/nickeltc/qt6/`.
 
 The 5.18 symbol reference (`test/libnickel-5.18.syms.gz`) was extracted from `libnickel.so.1.0.0` of an official Kobo/Tolino 5.18 firmware image.
+
+Victoria's original announcement, retained for context:
+
+> Hi Fellow Redditors! It's come to my attention that this project has been shared on both Mobileread and Reddit over the last few weeks and while I'm very happy that others are getting use out of one of my personal pet projects I just want to set some expectations around support and updates. I built this project for myself because I often forget to update my progress on Storygraph and I knew there had to be a way to build an integration despite the lack of public API.
+>
+> At this point I didn't intend for this to be used by the masses, just a few friends who I convinced to come to the Kobo / StoryGraph dark side from Kindle. While all are absolutely welcome to use it in its current state, there may still be some issues and bugs that I haven't come across yet and support for resolution or feature requests etc will be very limited.
+>
+> Thanks for your understanding!
+>
+> — Victoria

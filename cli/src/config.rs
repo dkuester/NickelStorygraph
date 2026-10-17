@@ -76,6 +76,9 @@ pub struct Config {
   pub threshold: u8,
 }
 
+/// Fallback defaults, used only when `config.ini` must be generated without
+/// `config_example.ini` present. These mirror the shipped example defaults so
+/// both paths behave identically — keep them in sync.
 impl Default for Config {
   fn default() -> Self {
     Self {
@@ -85,10 +88,10 @@ impl Default for Config {
       auto_sync_default: false,
       debug: false,
       sqlite_path: "/mnt/onboard/.kobo/KoboReader.sqlite".into(),
-      sync_bookmarks: SyncBookmarks::Never,
+      sync_bookmarks: SyncBookmarks::Always,
       sync_daily: 0,
-      sync_on_close: SyncOnClose::Never,
-      threshold: 0,
+      sync_on_close: SyncOnClose::Always,
+      threshold: 20,
     }
   }
 }
@@ -188,5 +191,16 @@ mod tests {
     let c: Config = serini::from_str(&strip_general_header(ini)).unwrap();
     assert_eq!(c.session_cookie, "abc");
     assert_eq!(c.sync_daily, 3);
+  }
+
+  #[test]
+  fn default_config_matches_example_defaults() {
+    let d = Config::default();
+    assert_eq!(d.sync_bookmarks, SyncBookmarks::Always);
+    assert_eq!(d.sync_on_close, SyncOnClose::Always);
+    assert_eq!(d.threshold, 20);
+    assert_eq!(d.sync_daily, 0);
+    assert!(!d.auto_sync_default);
+    assert!(!d.debug);
   }
 }
