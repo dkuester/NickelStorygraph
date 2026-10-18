@@ -32,6 +32,8 @@ Upstream NickelStorygraph targets Kobo firmware 4.x, which runs Qt 5.2.1. Kobo/T
 
 For firmware 4.x, use the upstream `main` branch. See [Acknowledgements](#acknowledgements) for the people whose work this fork builds on.
 
+> **Note:** This fork and its changes (code, documentation, and tests) were developed with the assistance of AI tools (large language models).
+
 ## Features
 
 ### Syncing & book linking
