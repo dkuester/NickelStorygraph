@@ -26,6 +26,13 @@ This project is based in part on NickelHardcover
 (https://codeberg.org/StrayRose/NickelHardcover)
 Copyright (c) 2025 Ava Johnson — MIT License
 
-NickelHook is included as a submodule (hook/NickelHook/)
-(https://github.com/pgaskin/NickelHook)
+NickelHook is included as a submodule (hook/NickelHook/), using the
+Qt 6 port (branch qt6-support) from
+https://github.com/nicoverbruggen/NickelHook
 Copyright (c) 2020-2025 Patrick Gaskin — MIT License
+
+The Qt 6 NickelHook port (Failsafe fix and hook chaining) and the
+Qt 6.5.2 toolchain definition (.forgejo/nickeltc/qt6/) are based on
+https://github.com/nicoverbruggen/NickelHook and
+https://github.com/nicoverbruggen/Kobalt
+Copyright (c) 2026 Nico Verbruggen — MIT License
