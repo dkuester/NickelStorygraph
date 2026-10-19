@@ -149,6 +149,11 @@ QString BookRow::getMeta(QJsonObject json) {
     meta.append(QString::number(year.toDouble()));
   }
 
+  double pages = json.value("pages").toDouble();
+  if (pages > 0) {
+    meta.append(t("%1 pages").arg(static_cast<int>(pages)));
+  }
+
   double usersCount = json.value("users_count").toDouble();
   if (usersCount > 0) {
     meta.append(QString::number(usersCount).append(" Readers"));
@@ -156,10 +161,13 @@ QString BookRow::getMeta(QJsonObject json) {
 
   double rating = json.value("rating").toDouble();
   if (rating > 0) {
-    meta.append(QString::number(rating, 'f', 1).append(" â˜…"));
+    meta.append(QString::number(rating, 'f', 1) + " " + QChar(0x2605));
   }
 
-  return meta.join(" â€¢ ");
+  // QChar code points instead of literals: this separator once shipped
+  // double-encoded and rendered as garbage on the device. Code points cannot be
+  // mangled by an editor or a re-encode.
+  return meta.join(" " + QString(QChar(0x2022)) + " ");
 }
 
 void BookRow::loadCover() {

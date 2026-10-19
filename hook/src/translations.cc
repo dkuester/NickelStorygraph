@@ -114,6 +114,7 @@ const Entry kDe[] = {
   {"Pace", "Tempo"},
   {"Page %1", "Seite %1"},
   {"Page %1 of %2", "Seite %1 von %2"},
+  {"%1 pages", "%1 Seiten"},
   {"Pages", "Seiten"},
   {"Paused", "Pausiert"},
   {"Paused (%1)", "Pausiert (%1)"},
