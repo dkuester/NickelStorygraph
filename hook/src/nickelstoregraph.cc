@@ -468,10 +468,13 @@ void showStorygraphHomeMenu(QWidget *anchor) {
 // hooks it just installed and park the plugin, so no calloc and no constructor
 // ever runs on an unsupported layout.
 //
-// The version is read from /mnt/onboard/.kobo/version (a single line such as
-// "5.18.21908") rather than the exported
+// The version is read from /mnt/onboard/.kobo/version rather than the exported
 // N3SettingsDeviceInformationController::viewFirmwareVersion symbol: a plain
-// file read has no Qt/Nickel dependency and is safe this early in init.
+// file read has no Qt/Nickel dependency and is safe this early in init. The
+// file is a single comma-separated line - serial, kernel, firmware, ... - e.g.
+// "T303440090606,4.9.77,5.18.264769,4.9.77,4.9.77,<model uuid>". The firmware
+// is the third field; the kernel field also looks like "x.y.z", so the field
+// is picked by position, not by shape. A line without commas is taken whole.
 typedef enum {
   FW_TOO_OLD,    // Qt5 (4.x / 5.0-5.17): the constructors do not exist here.
   FW_SUPPORTED,  // exactly 5.18, the layout the object sizes were measured on.
@@ -485,8 +488,8 @@ static FirmwareVerdict firmwareVerdict() {
     return FW_TOO_OLD;
   }
 
-  char buf[64] = {0};
-  bool read = fgets(buf, sizeof(buf), f) != nullptr;
+  char line[256] = {0};
+  bool read = fgets(line, sizeof(line), f) != nullptr;
   fclose(f);
 
   if (!read) {
@@ -495,9 +498,25 @@ static FirmwareVerdict firmwareVerdict() {
   }
 
   // Trim trailing newline/whitespace.
-  char *end = buf + strlen(buf);
-  while (end > buf && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t'))
+  char *end = line + strlen(line);
+  while (end > line && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t'))
     *--end = '\0';
+
+  // Select the firmware field (the third one) when the line is comma-separated.
+  char *buf = line;
+  if (strchr(line, ',')) {
+    for (int field = 0; field < 2 && buf; field++) {
+      buf = strchr(buf, ',');
+      if (buf)
+        buf++;
+    }
+    if (!buf) {
+      nh_log("firmware check: unrecognized version line '%s' - refusing to hook", line);
+      return FW_TOO_OLD;
+    }
+    if (char *comma = strchr(buf, ','))
+      *comma = '\0';
+  }
 
   int major = 0;
   int minor = 0;
