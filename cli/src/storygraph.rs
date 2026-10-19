@@ -38,7 +38,16 @@ fn serialize_author_as_array<S: serde::Serializer>(val: &str, s: S) -> Result<S:
   seq.end()
 }
 
-#[derive(Serialize, Debug)]
+/// A series reference as rendered in the link dialog (`BookRow::getSeries`
+/// reads `series.name` and `series.position`).
+#[derive(Serialize, Debug, PartialEq)]
+pub struct SeriesRef {
+  pub name: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub position: Option<u32>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
 pub struct Book {
   #[serde(rename = "id")]
   pub book_id: String,
@@ -48,6 +57,10 @@ pub struct Book {
   #[serde(rename = "image")]
   pub cover_url: Option<String>,
   pub pages: u32,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub series: Option<SeriesRef>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub release_year: Option<u32>,
 }
 
 #[derive(Serialize, Debug)]
@@ -159,6 +172,42 @@ fn check_session(response: &Response) -> Result<()> {
   Ok(())
 }
 
+/// Cloudflare serves its bot challenge as a 403 page whose body is HTML
+/// ("Just a moment..."), not JSON. Without this check that body would surface
+/// as a generic "returned error status" and the user would be told to report an
+/// unexpected error instead of refreshing the cookies.
+fn is_cloudflare_challenge(status: &StatusCode, body: &str) -> bool {
+  *status == StatusCode::FORBIDDEN
+    && (body.contains("Just a moment")
+      || body.contains("cf_chl")
+      || body.contains("challenge-platform"))
+}
+
+/// Turns a Cloudflare challenge into an actionable error; rethrows any other
+/// 403 as the plain HTTP error.
+///
+/// NOTE: this consumes the response body, so call it only on the path where the
+/// body is not needed afterwards.
+fn check_blocked(res: Response, context: &str) -> Result<Response> {
+  let status = res.status();
+
+  if status != StatusCode::FORBIDDEN {
+    return Ok(res);
+  }
+
+  let body = res.text().unwrap_or_default();
+
+  if is_cloudflare_challenge(&status, &body) {
+    return Err(UserError(
+      "StoryGraph blocked the request with a Cloudflare bot check (HTTP 403).<br><br>If syncing stopped working, your cookies have probably expired: log in to StoryGraph in a browser and update <i>session_cookie</i> and <i>remember_user_token</i> in <i>.adds/NickelStorygraph/config.ini</i>. If they are fresh, wait a few minutes and try again."
+        .to_owned(),
+    )
+    .into());
+  }
+
+  bail!("{context} returned error status: 403 Forbidden")
+}
+
 // ── Low-level HTTP ────────────────────────────────────────────────────────────
 
 fn get(path: &str) -> Result<String> {
@@ -173,6 +222,7 @@ fn get(path: &str) -> Result<String> {
   })
   .map_err(|e| e.error)?;
 
+  let res = check_blocked(res, &format!("GET {url}"))?;
   check_session(&res)?;
   res
     .error_for_status_ref()
@@ -217,6 +267,7 @@ fn post_form_browser(path: &str, fields: &[(String, String)]) -> Result<String> 
     return Ok(String::new());
   }
 
+  let res = check_blocked(res, &format!("POST {url}"))?;
   check_session(&res)?;
   res
     .error_for_status_ref()
@@ -268,6 +319,7 @@ fn post_form(path: &str, fields: &[(&str, &str)]) -> Result<String> {
     return Ok(String::new());
   }
 
+  let res = check_blocked(res, &format!("POST {url}"))?;
   check_session(&res)?;
   res
     .error_for_status_ref()
@@ -1012,75 +1064,149 @@ pub fn get_user() -> Result<User> {
 }
 
 /// Searches StoryGraph by title/author/ISBN and returns matching books.
-/// Audio editions are filtered out. Cover URLs are not populated (StoryGraph
-/// serves covers from a CDN that requires a separate request).
+/// Audio editions are filtered out.
 pub fn search(query: &str) -> Result<Vec<Book>> {
   require_credentials()?;
   let html = get(&format!(
     "/browse?search_term={}",
     urlencoding::encode(query)
   ))?;
-  let doc = Html::parse_document(&html);
+  Ok(parse_search_results(&html))
+}
 
+/// Parses the `/browse` result panes.
+///
+/// One `.book-pane` per hit. The title block is
+/// `.book-title-author-and-series` (title, author, series link); the edition
+/// line right after it carries pages/format/year as "541 pages • hardcover •
+/// 2006", and the cover is `.book-cover img`.
+fn parse_search_results(html: &str) -> Vec<Book> {
+  let doc = Html::parse_document(html);
+
+  let pane_sel = Selector::parse(".book-pane").expect("valid selector");
   let container_sel = Selector::parse(".book-title-author-and-series").expect("valid selector");
   let title_sel = Selector::parse(r#"a[href^="/books/"]"#).expect("valid selector");
   let author_sel = Selector::parse(r#"a[href^="/authors/"]"#).expect("valid selector");
+  let series_sel = Selector::parse(r#"a[href^="/series/"]"#).expect("valid selector");
+  let cover_sel = Selector::parse(".book-cover img").expect("valid selector");
 
   let mut results = Vec::new();
   let mut seen = std::collections::HashSet::new();
 
-  for container in doc.select(&container_sel) {
-    let container_html = container.html();
-    let container_doc = Html::parse_fragment(&container_html);
+  for pane in doc.select(&pane_sel) {
+    let Some(container) = pane.select(&container_sel).next() else {
+      continue;
+    };
+    let Some(title_el) = container.select(&title_sel).next() else {
+      continue;
+    };
+    let Some(book_id) = title_el
+      .value()
+      .attr("href")
+      .and_then(|href| href.strip_prefix("/books/"))
+      .map(str::to_owned)
+    else {
+      continue;
+    };
 
-    let title_el = container_doc.select(&title_sel).next();
-    if let Some(title_el) = title_el {
-      let book_id = title_el
-        .value()
-        .attr("href")
-        .and_then(|href| href.strip_prefix("/books/"))
-        .map(str::to_owned);
-
-      if let Some(book_id) = book_id {
-        if seen.contains(&book_id) {
-          continue;
-        }
-
-        // Skip audio editions based on format info in nearby text
-        let pane_text = container_html.to_lowercase();
-        if pane_text.contains("format: audio") {
-          continue;
-        }
-
-        let title = title_el.text().collect::<String>().trim().to_owned();
-        let author = container_doc
-          .select(&author_sel)
-          .next()
-          .map(|el| el.text().collect::<String>().trim().to_owned())
-          .unwrap_or_else(|| "Unknown Author".to_owned());
-
-        // Page count from "X pages" text nearby
-        let pages = pane_text
-          .split_whitespace()
-          .zip(pane_text.split_whitespace().skip(1))
-          .find(|(_, next)| *next == "pages")
-          .and_then(|(n, _)| n.parse::<u32>().ok())
-          .unwrap_or(0);
-
-        seen.insert(book_id.clone());
-        results.push(Book {
-          book_id,
-          title,
-          author,
-          cover_url: None,
-          pages,
-        });
-      }
+    if seen.contains(&book_id) {
+      continue;
     }
+
+    let (pages, format, release_year) = edition_line(pane);
+
+    // Skip audiobook editions: StoryGraph tracks them by listening time, so a
+    // page-based sync would write nonsense. The edition line of an audio result
+    // reads "11 hours • audiobook • 2020", so no " pages" is present either way.
+    if format.to_lowercase().contains("audio") {
+      continue;
+    }
+
+    let title = title_el.text().collect::<String>().trim().to_owned();
+    let author = container
+      .select(&author_sel)
+      .next()
+      .map(|el| el.text().collect::<String>().trim().to_owned())
+      .unwrap_or_else(|| "Unknown Author".to_owned());
+
+    let cover_url = pane.select(&cover_sel).next().and_then(|img| {
+      img.value().attr("src").map(|src| {
+        if src.starts_with("http") {
+          src.to_owned()
+        } else {
+          format!("{BASE_URL}{src}")
+        }
+      })
+    });
+
+    seen.insert(book_id.clone());
+    results.push(Book {
+      book_id,
+      title,
+      author,
+      cover_url,
+      pages,
+      series: parse_series(container, &series_sel),
+      release_year,
+    });
   }
 
-  debug_log!("search({query:?}) → {} results", results.len());
-  Ok(results)
+  debug_log!("search → {} results", results.len());
+  results
+}
+
+/// Reads the edition line of a result pane ("541 pages • hardcover • 2006 • 308
+/// editions") into `(pages, format, release_year)`. Audiobook panes carry a
+/// duration instead of a page count ("29 hours • audiobook • 2020") and are
+/// reported with `pages = 0`.
+fn edition_line(pane: scraper::ElementRef) -> (u32, String, Option<u32>) {
+  let p_sel = Selector::parse("p").expect("valid selector");
+
+  for p in pane.select(&p_sel) {
+    let text = p.text().collect::<String>();
+    let parts: Vec<&str> = text.split('\u{2022}').map(str::trim).collect();
+
+    // Needs at least "<count> pages|hours • <format>"; this skips the series
+    // line ("Mistborn #1") and other single-part paragraphs.
+    let Some(first) = parts.first() else {
+      continue;
+    };
+    let is_edition_line = [" pages", " hours", " mins"]
+      .iter()
+      .any(|suffix| first.ends_with(suffix));
+    if !is_edition_line || parts.len() < 2 {
+      continue;
+    }
+
+    let pages = first
+      .strip_suffix(" pages")
+      .and_then(|n| n.trim().parse().ok())
+      .unwrap_or(0);
+    let format = parts[1].to_owned();
+    let year = parts.get(2).and_then(|s| s.parse().ok());
+
+    return (pages, format, year);
+  }
+
+  (0, String::new(), None)
+}
+
+/// Reads the series link of the title block ("Mistborn #1") into a series
+/// reference. Returns None for standalones.
+fn parse_series(container: scraper::ElementRef, series_sel: &Selector) -> Option<SeriesRef> {
+  let mut links = container.select(series_sel);
+
+  let name = links
+    .next()
+    .map(|el| el.text().collect::<String>().trim().to_owned())
+    .filter(|name| !name.is_empty())?;
+
+  let position = links
+    .next()
+    .map(|el| el.text().collect::<String>())
+    .and_then(|pos| pos.trim().trim_start_matches('#').parse().ok());
+
+  Some(SeriesRef { name, position })
 }
 
 /// Search by ISBN — returns the first non-audio match, or None.
@@ -2034,5 +2160,159 @@ mod tests {
       Some(33)
     );
     assert_eq!(progress_percent_from_edit_progress("no bar here"), None);
+  }
+
+  // Trimmed markup from a real /browse response (captured 2026-10-19): classes,
+  // nesting and text structure preserved, page chrome removed. One versioned
+  // print edition, one standalone print edition, one audiobook edition.
+  const BROWSE_FIXTURE: &str = r#"
+<div class="search-results-books"><span class="search-results-books-panes">
+  <div class="book-pane" data-book-id=99860520-9842-41bd-866b-4e5f12558d20>
+    <div class="book-pane-content">
+      <div class="col-span-2 cover-image-column">
+        <div class="book-cover">
+          <a href="/books/99860520-9842-41bd-866b-4e5f12558d20">
+            <img alt="The Final Empire by Brandon Sanderson" class="rounded-sm" src="https://cdn.thestorygraph.com/s1hm0zy7tchue3u0rquctj5i2vv0" />
+          </a>
+        </div>
+      </div>
+      <div class="col-span-6 w-[93%]">
+        <div class="book-title-author-and-series">
+          <p class="font-semibold tracking-tight"><a href="/series/2">Mistborn</a> <a href="/series/2">#1</a></p>
+          <h3 class="font-bold text-xl"><a href="/books/99860520-9842-41bd-866b-4e5f12558d20">The Final Empire</a></h3>
+          <p class="font-body mb-1 mt-1 text-sm"><a href="/authors/2ee3fed7-9bff-4a19-868c-d194ca72ce26">Brandon Sanderson</a></p>
+        </div>
+        <p class="text-xs font-light text-darkestGrey dark:text-grey mt-1">
+          <span class="toggle-edition-info-link">541 pages<span class="text-darkerGrey"> • </span>hardcover<span class="text-darkerGrey"> • </span>2006<svg class="inline ml-0.5 w-3 h-3"><path d="M9 5l7 7-7 7"></path></svg></span><span class="text-darkerGrey"> • </span><a href="/books/99860520-9842-41bd-866b-4e5f12558d20/editions">308 editions</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="book-pane" data-book-id=11111111-2222-3333-4444-555555555555>
+    <div class="book-pane-content">
+      <div class="col-span-2 cover-image-column">
+        <div class="book-cover">
+          <a href="/books/11111111-2222-3333-4444-555555555555"><img alt="Elantris" src="https://cdn.thestorygraph.com/elantris" /></a>
+        </div>
+      </div>
+      <div class="col-span-6 w-[93%]">
+        <div class="book-title-author-and-series">
+          <h3 class="font-bold text-xl"><a href="/books/11111111-2222-3333-4444-555555555555">Elantris</a></h3>
+          <p class="font-body mb-1 mt-1 text-sm"><a href="/authors/2ee3fed7-9bff-4a19-868c-d194ca72ce26">Brandon Sanderson</a></p>
+        </div>
+        <p class="text-xs font-light text-darkestGrey dark:text-grey mt-1">
+          <span class="toggle-edition-info-link">622 pages<span class="text-darkerGrey"> • </span>paperback<span class="text-darkerGrey"> • </span>2019</span><span class="text-darkerGrey"> • </span><a href="/books/11111111-2222-3333-4444-555555555555/editions">90 editions</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="book-pane" data-book-id=99999999-8888-7777-6666-555555555555>
+    <div class="book-pane-content">
+      <div class="col-span-2 cover-image-column">
+        <div class="book-cover">
+          <a href="/books/99999999-8888-7777-6666-555555555555"><img alt="The Final Empire audiobook" src="https://cdn.thestorygraph.com/audio" /></a>
+        </div>
+      </div>
+      <div class="col-span-6 w-[93%]">
+        <div class="book-title-author-and-series">
+          <h3 class="font-bold text-xl"><a href="/books/99999999-8888-7777-6666-555555555555">The Final Empire</a></h3>
+          <p class="font-body mb-1 mt-1 text-sm"><a href="/authors/2ee3fed7-9bff-4a19-868c-d194ca72ce26">Brandon Sanderson</a></p>
+        </div>
+        <p class="text-xs font-light text-darkestGrey dark:text-grey mt-1">
+          <span class="toggle-edition-info-link">29 hours<span class="text-darkerGrey"> • </span>audiobook<span class="text-darkerGrey"> • </span>2020</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</span></div>
+"#;
+
+  #[test]
+  fn parse_search_results_extracts_edition_metadata() {
+    let results = parse_search_results(BROWSE_FIXTURE);
+
+    // The audiobook pane is filtered out.
+    assert_eq!(results.len(), 2);
+
+    let first = &results[0];
+    assert_eq!(first.book_id, "99860520-9842-41bd-866b-4e5f12558d20");
+    assert_eq!(first.title, "The Final Empire");
+    assert_eq!(first.author, "Brandon Sanderson");
+    assert_eq!(first.pages, 541);
+    assert_eq!(first.release_year, Some(2006));
+    assert_eq!(
+      first.series,
+      Some(SeriesRef {
+        name: "Mistborn".to_owned(),
+        position: Some(1)
+      })
+    );
+    assert_eq!(
+      first.cover_url.as_deref(),
+      Some("https://cdn.thestorygraph.com/s1hm0zy7tchue3u0rquctj5i2vv0")
+    );
+  }
+
+  #[test]
+  fn parse_search_results_handles_standalone() {
+    let results = parse_search_results(BROWSE_FIXTURE);
+    let standalone = &results[1];
+
+    assert_eq!(standalone.title, "Elantris");
+    assert_eq!(standalone.pages, 622);
+    assert_eq!(standalone.release_year, Some(2019));
+    assert_eq!(standalone.series, None);
+  }
+
+  #[test]
+  fn parse_search_results_serializes_series_for_the_hook() {
+    let results = parse_search_results(BROWSE_FIXTURE);
+    let value = serde_json::to_value(&results[0]).expect("serializable");
+
+    // BookRow::getMeta/getSeries read exactly these keys.
+    assert_eq!(value["pages"], 541);
+    assert_eq!(value["release_year"], 2006);
+    assert_eq!(value["series"]["name"], "Mistborn");
+    assert_eq!(value["series"]["position"], 1);
+    assert_eq!(value["authors"][0], "Brandon Sanderson");
+    // Standalones omit the key entirely instead of sending null.
+    let standalone = serde_json::to_value(&results[1]).expect("serializable");
+    assert!(standalone.get("series").is_none());
+  }
+
+  #[test]
+  fn is_cloudflare_challenge_detects_challenge_page() {
+    // Markers taken from a real 403 body served to non-browser clients
+    // (captured 2026-10-19): title "Just a moment...", window._cf_chl_opt,
+    // and scripts from /cdn-cgi/challenge-platform/.
+    assert!(is_cloudflare_challenge(
+      &StatusCode::FORBIDDEN,
+      "<html lang=\"en-US\"><head><title>Just a moment...</title></head></html>"
+    ));
+    assert!(is_cloudflare_challenge(
+      &StatusCode::FORBIDDEN,
+      "<script>window._cf_chl_opt={cvId:'3'};</script>"
+    ));
+    assert!(is_cloudflare_challenge(
+      &StatusCode::FORBIDDEN,
+      "<script src=\"/cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1\"></script>"
+    ));
+  }
+
+  #[test]
+  fn is_cloudflare_challenge_ignores_other_responses() {
+    // A plain 403 (e.g. a permission error) must stay a generic HTTP error.
+    assert!(!is_cloudflare_challenge(
+      &StatusCode::FORBIDDEN,
+      "<html><body>You are not allowed to view this page.</body></html>"
+    ));
+    // The markers only count together with 403.
+    assert!(!is_cloudflare_challenge(&StatusCode::OK, "Just a moment"));
+    assert!(!is_cloudflare_challenge(
+      &StatusCode::INTERNAL_SERVER_ERROR,
+      "cf_chl"
+    ));
   }
 }
