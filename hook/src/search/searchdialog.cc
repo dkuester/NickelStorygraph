@@ -76,6 +76,7 @@ void SearchDialog::commit() {
 }
 
 void SearchDialog::requestPage(int index) {
+  currentPage = index;
   QString query = lineEdit->text();
 
   BookRow *dummy = new BookRow(QJsonObject(), this);
@@ -94,8 +95,6 @@ void SearchDialog::response(QJsonObject doc) {
     pages->setStatusText(t("No results found."));
     return;
   }
-
-  pages->setTotal(doc.value("total").toInt(1));
 
   QWidget *box = new QWidget(pages);
   QVBoxLayout *results = new QVBoxLayout(box);
@@ -116,6 +115,15 @@ void SearchDialog::response(QJsonObject doc) {
 
   results->addStretch(1);
   pages->addPage(box);
+
+  // The CLI reports whether rows follow this slice; map that onto the total
+  // page count. `has_more` → total 0 means "unknown, keep offering next"
+  // (PagedStack treats total <= 0 as paging-forward-enabled); the last page
+  // sets total to its own index so the next button hides and the footer reads
+  // "Page X of X". Called after addPage() so PagedStack::current is the page
+  // just built.
+  bool hasMore = doc.value("has_more").toBool();
+  pages->setTotal(hasMore ? 0 : currentPage);
 }
 
 void SearchDialog::editions(QString id) {

@@ -19,7 +19,7 @@ pub struct Search {
   #[argh(option, default = "20")]
   pub limit: usize,
 
-  /// page offset (1-based, unused — kept for hook compatibility)
+  /// screen page (1-based); the hook computes rows-per-screen via `--limit`
   #[argh(option, default = "1")]
   pub page: usize,
 }
@@ -27,10 +27,10 @@ pub struct Search {
 pub fn run(args: Search) -> Result<()> {
   log!("{} {:?}", &*VERSION, args);
 
-  let mut books = storygraph::search(&args.query)?;
-  books.truncate(args.limit);
-
-  let total = books.len();
-  emit_json!("{}", json!({ "results": books, "total": total }));
+  let result = storygraph::search_paged(&args.query, args.limit, args.page)?;
+  emit_json!(
+    "{}",
+    json!({ "results": result.books, "has_more": result.has_more })
+  );
   Ok(())
 }

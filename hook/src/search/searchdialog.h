@@ -27,6 +27,7 @@ private:
   PagedStack *pages = nullptr;
   TouchLineEdit *lineEdit = nullptr;
   QString contentId;
+  int currentPage = 0;
 
   void clear();
 };

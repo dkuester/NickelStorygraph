@@ -1074,6 +1074,74 @@ pub fn search(query: &str) -> Result<Vec<Book>> {
   Ok(parse_search_results(&html))
 }
 
+/// One dialog screen of search results plus whether more rows follow the slice.
+#[derive(Debug)]
+pub struct SearchResult {
+  pub books: Vec<Book>,
+  pub has_more: bool,
+}
+
+/// Number of raw `.book-pane` elements in a `/browse` response. Used to tell a
+/// genuinely empty StoryGraph page from one whose panes were all filtered out
+/// (audiobooks): zero panes means the result set is exhausted.
+fn count_book_panes(html: &str) -> usize {
+  let doc = Html::parse_document(html);
+  let sel = Selector::parse(".book-pane").expect("valid selector");
+  doc.select(&sel).count()
+}
+
+/// Fetches StoryGraph `/browse` pages as needed and returns the rows for one
+/// dialog screen plus whether more rows follow the slice.
+///
+/// StoryGraph serves a fixed number of hits per `&page=N` (about 10) while a
+/// dialog screen holds `limit` rows (height-dependent, ~4–6), so screen pages
+/// don't map 1:1 onto `&page=N`. `page` is the 1-based screen page; this walks
+/// StoryGraph pages from the start, accumulating non-audio results (deduplicated
+/// across the pagination's page-boundary overlap) until it holds at least one
+/// row past the end of the requested slice, then returns the slice and reports
+/// `has_more` (whether any row exists after it).
+pub fn search_paged(query: &str, limit: usize, page: usize) -> Result<SearchResult> {
+  require_credentials()?;
+  let start = page.saturating_sub(1).saturating_mul(limit);
+  let end = start.saturating_add(limit);
+
+  // Safety cap: 50 StoryGraph pages (~500 hits) is far beyond any realistic
+  // manual link search; it bounds the loop if a query returns many audio-only
+  // pages that all parse to zero rows.
+  const MAX_PAGES: usize = 50;
+
+  let mut acc: Vec<Book> = Vec::new();
+  let mut seen = std::collections::HashSet::new();
+  let mut sg_page = 1usize;
+
+  while acc.len() <= end && sg_page <= MAX_PAGES {
+    let html = get(&format!(
+      "/browse?search_term={}&page={sg_page}",
+      urlencoding::encode(query)
+    ))?;
+
+    if count_book_panes(&html) == 0 {
+      break;
+    }
+
+    for book in parse_search_results(&html) {
+      if seen.insert(book.book_id.clone()) {
+        acc.push(book);
+      }
+    }
+    sg_page += 1;
+  }
+
+  let has_more = acc.len() > end;
+  let books: Vec<Book> = acc.into_iter().skip(start).take(limit).collect();
+
+  debug_log!(
+    "search_paged({query:?}, limit={limit}, page={page}) → {} rows, has_more={has_more}",
+    books.len()
+  );
+  Ok(SearchResult { books, has_more })
+}
+
 /// Parses the `/browse` result panes.
 ///
 /// One `.book-pane` per hit. The title block is
