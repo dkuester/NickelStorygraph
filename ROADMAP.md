@@ -27,53 +27,22 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] Link-dialog metadata: pages, release year, series (`name` + `position`) and cover URL scraped from `/browse` and rendered by the existing `BookRow`
 - [x] Audiobook results filtered via the edition line (the old `format: audio` check never matched on `/browse`)
 - [x] Double-encoded bullet/star in `BookRow::getMeta` replaced with `QChar` code points
+- [x] Search paging: offset math in the CLI (`search_paged` reports `has_more`) and the hook maps it to `PagedStack::setTotal`; screen pages no longer map 1:1 onto `&page=N`
+- [x] Firmware self-check: read `.kobo/version` at init; refuse pre-5.18 (Qt5 ABI), accept 5.18, and hook 5.19+/6.x with a warning log; widget allocations oversized to a uniform 2048 bytes as layout headroom
+- [x] Parser fixtures: real trimmed + anonymized snapshots for `parse_editions`, `parse_shelf_section` (both the `edit-progress` bar and the paused hidden-input path) and `parse_journal` (started/paused/progress badges); the note/quote path stays behind a synthetic fixture (the test account has no notes/quotes to capture)
+- [x] Profile-URL fix: `get_user()` scraped `/users/:slug`, but StoryGraph moved profiles to `/profile/:slug` — would have broken sync on any device without a cached slug (caught by the live-session probe)
+- [x] Cookie import: `import-cookies` CLI subcommand merges a `.adds/NickelStorygraph/cookies.txt` into `config.ini` line-by-line (no `[General]` header); settings dialog got an "Import cookies" row
+- [x] Verified with a live session: a valid `remember_user_token` re-auths a stale/blank `session_cookie` transparently, so no session write-back is needed — only the remember token has to stay fresh
 
 ## Quick wins
 
 Low effort, clear value — shippable in a single sitting.
 
-### Search result paging
-`search` accepts `--page` but ignores it ("kept for hook compatibility"), while
-the hook computes rows-per-page and passes a page number — so the link dialog
-only ever shows the first screenful and never offers "next". The endpoint is
-verified: `/browse?search_term=X&page=2` returns the next page and the result
-HTML carries the next-page link.
-
-- **Wrinkle found while scoping:** a StoryGraph page holds ~10 results, a dialog
-  screen holds `limit` rows (height-dependent, ~4–6). Screen pages therefore do
-  not map 1:1 onto `&page=N`; a row offset is needed (fetch the StoryGraph page
-  covering the offset, then slice), or the screen itself must scroll.
-- **Scope:** fix the offset math in the CLI and report whether more rows exist
-  after the slice; the hook turns that into `PagedStack::setTotal`.
-- **Effort:** small–medium (the mapping, not the plumbing, is the work).
-
-### Firmware self-check (log + skip, no UI)
-The `calloc` object-size hack is 5.18-specific. Read the firmware version at
-init and, on a mismatch, log it and skip hooking instead of corrupting the heap.
-Getting the version (`.kobo/version`, or the exported
-`N3SettingsDeviceInformationController::viewFirmwareVersion`) is trivial; a
-*visible* message is the expensive part (UI during boot) and stays a follow-up.
-
-- **Blocker:** needs a device to verify. Keep the change to "no hooking" so a
-  wrong guess cannot break anything.
-- **Effort:** small.
+_None open — both quick wins shipped; see "Recently completed" above._
 
 ## High priority
 
 Higher effort, highest value — the product's health and the most painful UX.
-
-### Fixture-based parser tests
-Capture real StoryGraph HTML snapshots and assert the parsing selectors
-(shelf scraping, edition + journal parsing) against them. `search` now shows the
-pattern to copy: a pure `parse_search_results(&str)` plus a trimmed
-`BROWSE_FIXTURE` snippet in the unit tests. Extending it to the remaining
-parsers makes a StoryGraph UI change break CI, not a user's device.
-
-- **Why:** the highest-leverage guard against the core fragility.
-- **Blocker:** needs logged-in HTML snapshots as committed test fixtures (the
-  public `/browse` page is reachable without a session, shelf/edition/journal
-  pages are not).
-- **Effort:** medium.
 
 ### Started / finished dates
 Status changes set "started"/"finished"; StoryGraph also tracks the concrete
@@ -84,19 +53,6 @@ dates. `update-progress-with-note` already posts
 - **Note:** the hook knows only "now", so the feature is "date = today"; verify
   the parameter names first.
 - **Effort:** small, but blocked on verification with a live session.
-
-### Cookie import (login friction)
-The direct HTTP login is blocked by Cloudflare and stays dead, so cookies come
-from the browser. A "paste the cookie string" dialog is *not* viable as
-previously described: libnickel 5.18 exports no `QClipboard`, so there is no
-paste source on the device — the string would have to be typed on an e-ink
-keyboard.
-
-- **Scope:** import a cookie header (`name=value; name=value`) from a file in
-  `.adds/NickelStorygraph/`, or a desktop helper that writes `config.ini`.
-  Needs a UX decision before code.
-- **Why:** the most painful point in the whole flow.
-- **Effort:** small for the file import, medium for the desktop helper.
 
 ### On-device OTA update
 Update the plugin directly on the device. The install is split across two
