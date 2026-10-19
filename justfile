@@ -1,6 +1,9 @@
 set dotenv-load
 
-export VERSION := "0.3.1"
+# Version follows the nearest git tag via `git describe`; tagging a release is
+# all that's needed to bump the version baked into the hook (NH_VERSION) and
+# the CLI. Falls back to "unknown" only when built outside a git checkout.
+export VERSION := `git describe --tags --always --dirty 2>/dev/null || echo "unknown"`
 
 [group('helpers')]
 default:
