@@ -9,8 +9,9 @@ use serde::{Deserialize, Deserializer, Serialize, de};
 #[serde(rename_all = "lowercase")]
 pub enum SyncBookmarks {
   Always,
-  Never,
+  Manual,
   Finished,
+  Never,
 }
 
 impl<'de> Deserialize<'de> for SyncBookmarks {
@@ -22,6 +23,7 @@ impl<'de> Deserialize<'de> for SyncBookmarks {
       s if s.eq_ignore_ascii_case("Always") => Ok(SyncBookmarks::Always),
       s if s.eq_ignore_ascii_case("Never") => Ok(SyncBookmarks::Never),
       s if s.eq_ignore_ascii_case("Finished") => Ok(SyncBookmarks::Finished),
+      s if s.eq_ignore_ascii_case("Manual") => Ok(SyncBookmarks::Manual),
       s => Err(de::Error::custom(format!(
         "<i>{s}</i> is not a valid <i>sync_bookmarks</i> value"
       ))),
@@ -49,8 +51,7 @@ impl<'de> Deserialize<'de> for SyncOnClose {
     } else if s.eq_ignore_ascii_case("Never") {
       Ok(SyncOnClose::Never)
     } else if let Ok(n) = s.parse::<u8>()
-      && n > 1
-      && n <= 100
+      && (1..=100).contains(&n)
     {
       Ok(SyncOnClose::Number(n))
     } else {
@@ -183,6 +184,30 @@ mod tests {
     assert_eq!(c.remember_user_token, "xyz");
     assert_eq!(c.sync_daily, 3);
     assert!(!c.debug); // missing fields fall back to Default
+  }
+
+  #[test]
+  fn parses_all_sync_bookmarks_values() {
+    for (raw, expected) in [
+      ("always", SyncBookmarks::Always),
+      ("manual", SyncBookmarks::Manual),
+      ("finished", SyncBookmarks::Finished),
+      ("never", SyncBookmarks::Never),
+    ] {
+      let ini = format!("sync_bookmarks = {raw}\n");
+      let c: Config = serini::from_str(&strip_general_header(&ini)).unwrap();
+      assert_eq!(c.sync_bookmarks, expected);
+    }
+  }
+
+  #[test]
+  fn parses_sync_on_close_numeric_range() {
+    for raw in ["1", "2", "99", "100"] {
+      let ini = format!("sync_on_close = {raw}\n");
+      let c: Config = serini::from_str(&strip_general_header(&ini)).unwrap();
+      let n = raw.parse::<u8>().unwrap();
+      assert_eq!(c.sync_on_close, SyncOnClose::Number(n));
+    }
   }
 
   #[test]

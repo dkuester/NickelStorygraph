@@ -98,7 +98,7 @@ bool Settings::getAutoSyncDefault() { return config->value("auto_sync_default", 
 
 void Settings::setSyncBookmarks(QString value) { config->setValue("sync_bookmarks", value); }
 
-QString Settings::getSyncBookmarks() { return config->value("sync_bookmarks", "never").toString().toLower(); }
+QString Settings::getSyncBookmarks() { return config->value("sync_bookmarks", "always").toString().toLower(); }
 
 QString Settings::getSessionCookie() { return config->value("session_cookie").toString(); }
 
@@ -140,7 +140,7 @@ int Settings::getCloseThreshold() {
   }
 
   int threshold = syncOnClose.toInt();
-  if (threshold > 0 && threshold < 100) {
+  if (threshold > 0 && threshold <= 100) {
     return threshold;
   }
 
