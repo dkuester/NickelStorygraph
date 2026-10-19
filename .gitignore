@@ -32,3 +32,8 @@ hook/libstorygraph.so
 
 # Package output (CLI + config, copied to .adds on the device)
 mnt/
+
+# Local cookie files: never commit StoryGraph session tokens
+cookies.ini
+cookies.txt
+/.adds/
