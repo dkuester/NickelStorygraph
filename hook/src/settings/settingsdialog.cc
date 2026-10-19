@@ -212,9 +212,10 @@ QFrame *SettingsDialog::buildGeneral() {
   username = new StaticRow(t("Authorized user"), t("Unknown"), false);
   layout->addWidget(username);
 
-  MenuRow *loginRow = new MenuRow(t("Log in"), MenuRowType::Tap, {{t("Log in"), true}}, {}, true);
-  QObject::connect(loginRow, &MenuRow::triggered, this, &SettingsDialog::openLogin);
-  layout->addWidget(loginRow);
+  // No "Log in" row: /users/sign_in sits behind a Cloudflare bot challenge, so
+  // the email/password login always fails with "Could not find CSRF token".
+  // LoginDialog and openLogin() stay in place for when that is lifted; until
+  // then cookies come in through the import row below.
 
   MenuRow *importRow = new MenuRow(t("Import cookies"), MenuRowType::Tap, {{t("Import"), true}}, {}, true);
   QObject::connect(importRow, &MenuRow::triggered, this, &SettingsDialog::importCookies);
