@@ -912,7 +912,12 @@ pub fn get_feed() -> Result<Vec<FeedItem>> {
   Ok(items)
 }
 
-fn scrape_shelf_section(doc: &Html, container_selector: &str, status: &str) -> Vec<ReadingBook> {
+/// Parses one shelf section of the `/currently-reading/{slug}` page into
+/// books. `container_selector` is `.read-books` (currently reading) or
+/// `.paused-books-panes` (paused); `status` is the label attached to each
+/// result.
+fn parse_shelf_section(html: &str, container_selector: &str, status: &str) -> Vec<ReadingBook> {
+  let doc = Html::parse_document(html);
   let container_sel = Selector::parse(container_selector).expect("valid");
   let pane_sel = Selector::parse(".book-pane").expect("valid");
   let title_sel = Selector::parse("h3.font-bold a").expect("valid");
@@ -1022,17 +1027,16 @@ pub fn list_reading() -> Result<Vec<ReadingBook>> {
   require_credentials()?;
   let user = get_user()?;
   let html = get(&format!("/currently-reading/{}", user.slug))?;
-  let doc = Html::parse_document(&html);
 
-  let mut books = scrape_shelf_section(&doc, ".read-books", "reading");
-  books.extend(scrape_shelf_section(&doc, ".paused-books-panes", "paused"));
+  let mut books = parse_shelf_section(&html, ".read-books", "reading");
+  books.extend(parse_shelf_section(&html, ".paused-books-panes", "paused"));
 
   debug_log!("list_reading(): {} books total", books.len());
   Ok(books)
 }
 
 /// Returns the logged-in user's slug. Uses `user_slug` from config if set,
-/// otherwise scrapes the homepage nav for a `/users/` profile link.
+/// otherwise scrapes the homepage nav for a `/profile/:slug` link.
 pub fn get_user() -> Result<User> {
   require_credentials()?;
 
@@ -1046,15 +1050,15 @@ pub fn get_user() -> Result<User> {
   let html = get("/")?;
   let doc = Html::parse_document(&html);
 
-  // The nav has a link to the user's profile: /users/:slug
-  let sel = Selector::parse(r#"a[href^="/users/"]"#).expect("valid selector");
+  // The nav links to the user's profile as /profile/:slug; account actions like
+  // /profile/edit/:slug are sub-paths and must not match.
+  let sel = Selector::parse(r#"a[href^="/profile/"]"#).expect("valid selector");
   let slug = doc
     .select(&sel)
     .filter_map(|el| el.value().attr("href"))
-    .filter(|href| !href.contains("/sign_in") && !href.contains("/sign_up"))
-    .filter_map(|href| href.strip_prefix("/users/"))
+    .filter_map(|href| href.strip_prefix("/profile/"))
     .map(str::to_owned)
-    .next()
+    .find(|s| !s.is_empty() && !s.contains('/'))
     .context("Could not find user profile link — session may be expired")?;
 
   Ok(User {
@@ -1545,21 +1549,48 @@ pub fn submit_review(
 pub fn list_editions(book_id: &str, reading_format: i32, language: &str) -> Result<Vec<Edition>> {
   require_credentials()?;
   let html = get(&format!("/books/{book_id}/editions"))?;
-  let doc = Html::parse_document(&html);
+  debug_log!("list_editions({book_id}): HTML len={}", html.len());
 
-  // Diagnostic: log what selectors actually hit so we can tune if the page structure differs.
-  let pane_sel = Selector::parse(".book-pane").expect("valid selector");
-  let title_container_sel =
-    Selector::parse(".book-title-author-and-series").expect("valid selector");
-  let pane_count = doc.select(&pane_sel).count();
-  let title_count = doc.select(&title_container_sel).count();
+  let editions = parse_editions(&html);
+
+  let is_digital = |f: &str| {
+    let f = f.to_lowercase();
+    f.contains("ebook")
+      || f.contains("e-book")
+      || f.contains("epub")
+      || f.contains("kindle")
+      || f.contains("digital")
+      || f.contains("mobi")
+      || f.contains("pdf")
+  };
+
+  let editions: Vec<Edition> = editions
+    .into_iter()
+    .filter(|e| {
+      if reading_format == READING_FORMAT_PRINT {
+        !is_digital(&e.format)
+      } else if reading_format == READING_FORMAT_EBOOK {
+        is_digital(&e.format)
+      } else {
+        true
+      }
+    })
+    .filter(|e| language.is_empty() || e.language.eq_ignore_ascii_case(language))
+    .collect();
+
   debug_log!(
-    "list_editions({book_id}): HTML len={}, has 'book-pane'={}, has 'data-book-id'={}, .book-pane count={pane_count}, .book-title-author-and-series count={title_count}",
-    html.len(),
-    html.contains("book-pane"),
-    html.contains("data-book-id"),
+    "list_editions({book_id}): returning {} editions (format={reading_format}, lang={language:?})",
+    editions.len()
   );
+  Ok(editions)
+}
 
+/// Parses the `/books/:id/editions` page into editions, skipping audiobook
+/// editions (tracked by listening time, not pages).
+fn parse_editions(html: &str) -> Vec<Edition> {
+  let doc = Html::parse_document(html);
+
+  let pane_sel = Selector::parse(".book-pane").expect("valid selector");
   let info_sel = Selector::parse(".edition-info p").expect("valid selector");
   let img_sel = Selector::parse(".book-cover img").expect("valid selector");
   let title_sel = Selector::parse(".book-title-author-and-series h3 a").expect("valid selector");
@@ -1584,10 +1615,7 @@ pub fn list_editions(book_id: &str, reading_format: i32, language: &str) -> Resu
 
     let book_id = match book_id {
       Some(id) => id,
-      None => {
-        debug_log!("list_editions: skipping pane with no book id");
-        continue;
-      }
+      None => continue,
     };
 
     let title = pane
@@ -1656,36 +1684,8 @@ pub fn list_editions(book_id: &str, reading_format: i32, language: &str) -> Resu
     });
   }
 
-  let is_digital = |f: &str| {
-    let f = f.to_lowercase();
-    f.contains("ebook")
-      || f.contains("e-book")
-      || f.contains("epub")
-      || f.contains("kindle")
-      || f.contains("digital")
-      || f.contains("mobi")
-      || f.contains("pdf")
-  };
-
-  let editions: Vec<Edition> = editions
-    .into_iter()
-    .filter(|e| {
-      if reading_format == READING_FORMAT_PRINT {
-        !is_digital(&e.format)
-      } else if reading_format == READING_FORMAT_EBOOK {
-        is_digital(&e.format)
-      } else {
-        true
-      }
-    })
-    .filter(|e| language.is_empty() || e.language.eq_ignore_ascii_case(language))
-    .collect();
-
-  debug_log!(
-    "list_editions({book_id}): returning {} editions (format={reading_format}, lang={language:?})",
-    editions.len()
-  );
-  Ok(editions)
+  debug_log!("parse_editions(): {} editions", editions.len());
+  editions
 }
 
 /// Returns what fraction of the meaningful words in `query_title` appear in `result_title`.
@@ -1895,7 +1895,12 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
   require_credentials()?;
 
   let html = get(&format!("/journal?book_id={book_id}"))?;
-  let doc = Html::parse_document(&html);
+  Ok(parse_journal(&html, limit, offset))
+}
+
+/// Parses `/journal?book_id={uuid}` entries into activities.
+fn parse_journal(html: &str, limit: usize, offset: usize) -> Vec<JournalActivity> {
+  let doc = Html::parse_document(html);
 
   let entry_sel = Selector::parse(".journal-entry-panes > div").expect("valid selector");
   let date_sel = Selector::parse("p.font-semibold").expect("valid selector");
@@ -1907,11 +1912,7 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
     Selector::parse("div.trix-content > div:not(.trix-content)").expect("valid selector");
 
   let all_entries: Vec<_> = doc.select(&entry_sel).collect();
-  debug_log!(
-    "list_journal({book_id}): HTML len={}, found {} entries",
-    html.len(),
-    all_entries.len()
-  );
+  debug_log!("parse_journal(): found {} entries", all_entries.len());
 
   let mut activities = Vec::new();
   let mut prev_progress: u32 = 0;
@@ -2029,7 +2030,8 @@ pub fn list_journal(book_id: &str, limit: usize, offset: usize) -> Result<Vec<Jo
     prev_progress = progress;
   }
 
-  Ok(activities)
+  debug_log!("parse_journal(): {} activities", activities.len());
+  activities
 }
 
 fn parse_storygraph_date(date_text: &str) -> String {
@@ -2382,5 +2384,314 @@ mod tests {
       &StatusCode::INTERNAL_SERVER_ERROR,
       "cf_chl"
     ));
+  }
+
+  // ── Shelf / edition / journal parser fixtures ──────────────────────────────
+  //
+  // EDITIONS_FIXTURE, SHELF_FIXTURE and JOURNAL_FIXTURE are real trimmed
+  // snapshots captured 2026-10-19 against the live site and anonymized (titles,
+  // authors, the user slug, and opaque UUIDs replaced with placeholders; class
+  // names and nesting are verbatim). The shelf and journal pages sit behind a
+  // login, so these replace the earlier synthetic fixtures and now act as drift
+  // guards. JOURNAL_NOTE_QUOTE_FIXTURE is the one remaining synthetic fixture:
+  // the test account has no journal notes or quotes to capture, so that parser
+  // path is still locked by a hand-built snippet.
+
+  const SHELF_FIXTURE: &str = r#"
+<div class="read-books">
+  <span class="read-books-panes">
+    <div class="max-w-3xl mb-4 md:mb-6 text-darkestGrey dark:text-grey book-pane break-words" id="book_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" data-book-id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa data-author-ids=11111111-1111-1111-1111-111111111111>
+      <div class="book-cover"><img alt="Book Title 1 by Author 1" class="rounded-sm shadow-lg dark:shadow-darkerGrey/40" src="https://cdn.thestorygraph.com/fixture-cover-1" /></div>
+      <h3 class="font-bold text-xl"><span class="text-red-700 dark:text-red-200"></span><a href="/books/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa">Book Title 1</a></h3>
+      <a class="hover:text-cyan-700, dark:hover:text-cyan-500" href="/authors/11111111-1111-1111-1111-111111111111">Author 1</a>
+      <div class="progress-bar cursor-pointer edit-progress overflow-hidden h-5 w-9 text-xs flex rounded-md bg-[#EBEBEB] dark:bg-[#4C4C4C]" data-book-id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa>
+  <div class="relative h-full bg-[#1FB784]" style="width: 57%">
+    <span class="absolute text-[11px] ml-0.5 font-semibold left-1 top-1/2 -translate-y-1/2  text-white">
+      57%
+    </span>
+  </div>
+</div>
+      <span class="toggle-edition-info-link cursor-pointer transition-colors duration-200 group" data-book-id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa>453 pages<span class="text-darkerGrey dark:text-lightGrey"> • </span>paperback<span class="text-darkerGrey dark:text-lightGrey"> • </span>1667
+              <svg class="inline ml-0.5 w-3 h-3 transition-all duration-200 edition-chevron group-hover:text-cyan-700 dark:group-hover:text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg></span>
+    </div>
+    <div class="max-w-3xl mb-4 md:mb-6 text-darkestGrey dark:text-grey book-pane break-words" id="book_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" data-book-id=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb data-author-ids=22222222-2222-2222-2222-222222222222>
+      <div class="book-cover"><img alt="Book Title 2 by Author 2" class="rounded-sm shadow-lg dark:shadow-darkerGrey/40" src="https://cdn.thestorygraph.com/fixture-cover-2" /></div>
+      <h3 class="font-bold text-xl"><span class="text-red-700 dark:text-red-200"></span><a href="/books/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb">Book Title 2</a></h3>
+      <a class="hover:text-cyan-700, dark:hover:text-cyan-500" href="/authors/22222222-2222-2222-2222-222222222222">Author 2</a>
+      <div class="progress-bar cursor-pointer edit-progress overflow-hidden h-5 w-9 text-xs flex rounded-md bg-[#EBEBEB] dark:bg-[#4C4C4C]" data-book-id=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb>
+  <div class="relative h-full bg-[#1FB784]" style="width: 4%">
+    <span class="absolute text-[11px] ml-0.5 font-semibold left-1 top-1/2 -translate-y-1/2  text-white">
+      4%
+    </span>
+  </div>
+</div>
+      <span class="toggle-edition-info-link cursor-pointer transition-colors duration-200 group" data-book-id=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb>80 pages<span class="text-darkerGrey dark:text-lightGrey"> • </span>digital<span class="text-darkerGrey dark:text-lightGrey"> • </span>1971
+              <svg class="inline ml-0.5 w-3 h-3 transition-all duration-200 edition-chevron group-hover:text-cyan-700 dark:group-hover:text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg></span>
+    </div>
+  </span>
+</div>
+<div class="paused-books-panes">
+    <div class="max-w-3xl mb-4 md:mb-6 text-darkestGrey dark:text-grey book-pane break-words" id="book_cccccccc-cccc-cccc-cccc-cccccccccccc" data-book-id=cccccccc-cccc-cccc-cccc-cccccccccccc data-author-ids=33333333-3333-3333-3333-333333333333>
+      <div class="book-cover"><img alt="Book Title 3 by Author 3" class="rounded-sm shadow-lg dark:shadow-darkerGrey/40" src="https://cdn.thestorygraph.com/fixture-cover-3" /></div>
+      <h3 class="font-bold text-xl"><span class="text-red-700 dark:text-red-200"></span><a href="/books/cccccccc-cccc-cccc-cccc-cccccccccccc">Book Title 3</a></h3>
+      <a class="hover:text-cyan-700, dark:hover:text-cyan-500" href="/authors/33333333-3333-3333-3333-333333333333">Author 3</a>
+      <input value="77" class="read-status-last-reached-percent" data-book-id="cccccccc-cccc-cccc-cccc-cccccccccccc" autocomplete="off" type="hidden" name="read_status[last_reached_percent]" id="read_status_last_reached_percent" />
+      <span class="toggle-edition-info-link cursor-pointer transition-colors duration-200 group" data-book-id=cccccccc-cccc-cccc-cccc-cccccccccccc>672 pages<span class="text-darkerGrey dark:text-lightGrey"> • </span>hardcover<span class="text-darkerGrey dark:text-lightGrey"> • </span>2016
+              <svg class="inline ml-0.5 w-3 h-3 transition-all duration-200 edition-chevron group-hover:text-cyan-700 dark:group-hover:text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg></span>
+    </div>
+</div>
+"#;
+
+  #[test]
+  fn parse_shelf_section_reads_reading_books() {
+    let books = parse_shelf_section(SHELF_FIXTURE, ".read-books", "reading");
+    assert_eq!(books.len(), 2);
+
+    let b = &books[0];
+    assert_eq!(b.id, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    assert_eq!(b.title, "Book Title 1");
+    assert_eq!(b.author, "Author 1");
+    assert_eq!(b.progress_percent, 57);
+    assert_eq!(b.pages, 453);
+    assert_eq!(b.format, "paperback");
+    assert_eq!(b.year, 1667);
+    assert_eq!(b.status, "reading");
+    assert_eq!(
+      b.cover_url.as_deref(),
+      Some("https://cdn.thestorygraph.com/fixture-cover-1")
+    );
+
+    let b = &books[1];
+    assert_eq!(b.id, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    assert_eq!(b.title, "Book Title 2");
+    assert_eq!(b.author, "Author 2");
+    assert_eq!(b.progress_percent, 4);
+    assert_eq!(b.pages, 80);
+    assert_eq!(b.format, "digital");
+    assert_eq!(b.year, 1971);
+    assert_eq!(b.status, "reading");
+  }
+
+  #[test]
+  fn parse_shelf_section_paused_book_uses_hidden_percent_input() {
+    // Paused books do not render the `edit-progress` bar (that class only
+    // exists on the active shelf), so progress must come from the hidden
+    // percent input.
+    let books = parse_shelf_section(SHELF_FIXTURE, ".paused-books-panes", "paused");
+    assert_eq!(books.len(), 1);
+
+    let b = &books[0];
+    assert_eq!(b.id, "cccccccc-cccc-cccc-cccc-cccccccccccc");
+    assert_eq!(b.title, "Book Title 3");
+    assert_eq!(b.author, "Author 3");
+    assert_eq!(b.progress_percent, 77);
+    assert_eq!(b.pages, 672);
+    assert_eq!(b.format, "hardcover");
+    assert_eq!(b.year, 2016);
+    assert_eq!(b.status, "paused");
+  }
+
+  const EDITIONS_FIXTURE: &str = r#"
+<div class="max-w-3xl mb-4 md:mb-6 text-darkestGrey dark:text-grey book-pane break-words" id="book_99860520-9842-41bd-866b-4e5f12558d20" data-book-id=99860520-9842-41bd-866b-4e5f12558d20 data-author-ids=2ee3fed7-9bff-4a19-868c-d194ca72ce26>
+  <div class="book-pane-content border border-darkGrey dark:border-darkerGrey rounded">
+    <div class="book-cover">
+      <a href="/books/99860520-9842-41bd-866b-4e5f12558d20">
+        <img alt="The Final Empire by Brandon Sanderson" class="rounded-sm shadow-lg dark:shadow-darkerGrey/40" src="https://cdn.thestorygraph.com/s1hm0zy7tchue3u0rquctj5i2vv0" />
+      </a>
+    </div>
+    <div class="book-title-author-and-series">
+      <p class="font-semibold tracking-tight hover:text-cyan-700 dark:hover:text-cyan-500 text-sm"><a href="/series/2">Mistborn</a> <a href="/series/2">#1</a></p>
+      <h3 class="font-bold text-xl"><span class="text-red-700 dark:text-red-200"></span><a href="/books/99860520-9842-41bd-866b-4e5f12558d20">The Final Empire</a></h3>
+      <p class="font-body mb-1 mt-1 md:mt-0 text-sm font-medium">
+        <a class="hover:text-cyan-700, dark:hover:text-cyan-500" href="/authors/2ee3fed7-9bff-4a19-868c-d194ca72ce26">Brandon Sanderson</a>
+      </p>
+    </div>
+    <p class='text-xs font-light text-darkestGrey dark:text-grey mt-1'>
+      541 pages<span class="text-darkerGrey dark:text-lightGrey"> • </span>hardcover<span class="text-darkerGrey dark:text-lightGrey"> • </span>2006
+    </p>
+    <div class="hidden edition-info mt-3" data-book-id=99860520-9842-41bd-866b-4e5f12558d20>
+      <p class="text-xs"><span class="font-semibold">ISBN/UID:</span> 9780765311788</p>
+      <p class="text-xs"><span class="font-semibold">Format:</span> Hardcover</p>
+      <p class="text-xs"><span class="font-semibold">Language:</span> English</p>
+      <p class="text-xs"><span class="font-semibold">Original Pub Year:</span> 2006</p>
+      <p class="text-xs"><span class="font-semibold">Edition Pub Date:</span> 25 Jul 2006</p>
+      <p class="text-xs"><span class="font-semibold">Publisher:</span> Tor Books</p>
+    </div>
+  </div>
+</div>
+<div class="max-w-3xl mb-4 md:mb-6 text-darkestGrey dark:text-grey book-pane break-words" id="book_730af4eb-cce0-44e6-baee-3cd222b8d3d3" data-book-id=730af4eb-cce0-44e6-baee-3cd222b8d3d3 data-author-ids=2ee3fed7-9bff-4a19-868c-d194ca72ce26>
+  <div class="book-pane-content border border-darkGrey dark:border-darkerGrey rounded">
+    <div class="book-cover">
+      <a href="/books/730af4eb-cce0-44e6-baee-3cd222b8d3d3">
+        <img alt="Mistborn by Brandon Sanderson" class="rounded-sm shadow-lg dark:shadow-darkerGrey/40" src="https://cdn.thestorygraph.com/ai3f5ml776l49feuzs1bxe6jiw20" />
+      </a>
+    </div>
+    <div class="book-title-author-and-series">
+      <p class="font-semibold tracking-tight hover:text-cyan-700 dark:hover:text-cyan-500 text-sm"><a href="/series/2">Mistborn</a> <a href="/series/2">#1</a></p>
+      <h3 class="font-bold text-xl"><span class="text-red-700 dark:text-red-200"></span><a href="/books/730af4eb-cce0-44e6-baee-3cd222b8d3d3">Mistborn</a></h3>
+      <p class="font-body mb-1 mt-1 md:mt-0 text-sm font-medium">
+        <a class="hover:text-cyan-700, dark:hover:text-cyan-500" href="/authors/2ee3fed7-9bff-4a19-868c-d194ca72ce26">Brandon Sanderson</a>
+      </p>
+    </div>
+    <p class='text-xs font-light text-darkestGrey dark:text-grey mt-1'>
+      657 pages<span class="text-darkerGrey dark:text-lightGrey"> • </span>paperback<span class="text-darkerGrey dark:text-lightGrey"> • </span>2006
+    </p>
+    <div class="hidden edition-info mt-3" data-book-id=730af4eb-cce0-44e6-baee-3cd222b8d3d3>
+      <p class="text-xs"><span class="font-semibold">ISBN/UID:</span> 9780765350381</p>
+      <p class="text-xs"><span class="font-semibold">Format:</span> Paperback</p>
+      <p class="text-xs"><span class="font-semibold">Language:</span> English</p>
+      <p class="text-xs"><span class="font-semibold">Original Pub Year:</span> 2006</p>
+      <p class="text-xs"><span class="font-semibold">Edition Pub Date:</span> 17 Jul 2006</p>
+      <p class="text-xs"><span class="font-semibold">Publisher:</span> Tom Doherty Associates</p>
+    </div>
+  </div>
+</div>
+"#;
+
+  #[test]
+  fn parse_editions_extracts_fields_from_real_markup() {
+    let editions = parse_editions(EDITIONS_FIXTURE);
+    assert_eq!(editions.len(), 2);
+
+    let hardcover = &editions[0];
+    assert_eq!(hardcover.book_id, "99860520-9842-41bd-866b-4e5f12558d20");
+    assert_eq!(hardcover.title, "The Final Empire");
+    assert_eq!(hardcover.format, "Hardcover");
+    assert_eq!(hardcover.pages, Some(541));
+    assert_eq!(hardcover.isbn, "9780765311788");
+    assert_eq!(hardcover.language, "English");
+    assert_eq!(hardcover.publisher, "Tor Books");
+    assert_eq!(hardcover.pub_date, "25 Jul 2006");
+    assert_eq!(
+      hardcover.cover_url.as_deref(),
+      Some("https://cdn.thestorygraph.com/s1hm0zy7tchue3u0rquctj5i2vv0")
+    );
+
+    let paperback = &editions[1];
+    assert_eq!(paperback.book_id, "730af4eb-cce0-44e6-baee-3cd222b8d3d3");
+    assert_eq!(paperback.title, "Mistborn");
+    assert_eq!(paperback.format, "Paperback");
+    assert_eq!(paperback.pages, Some(657));
+    assert_eq!(paperback.isbn, "9780765350381");
+    assert_eq!(paperback.publisher, "Tom Doherty Associates");
+    assert_eq!(paperback.pub_date, "17 Jul 2006");
+  }
+
+  const JOURNAL_FIXTURE: &str = r#"
+<span class="journal-entry-panes">
+<div class="mb-3 grid grid-cols-4 md:grid-cols-6">
+  <div class="col-span-4 md:col-span-4 ml-2 md:ml-2">
+  <div class="mb-4">
+    <p class="font-semibold text-xs md:text-sm">20 February 2024
+    <a class=" pb-4 text-xs md:text-sm standard-link float-right" href="/journal_entries/jjjjjjjj-0000-0000-0000-000000000016/edit?return_to=%2Fjournal%3Fbook_id%3Dcccccccc-cccc-cccc-cccc-cccccccccccc">Edit</a></p>
+  </div>
+    <div class="mt-2 mb-4">
+     <span title="Starting reading this book" class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-blueGrey-300 dark:bg-blueGrey-600 text-white dark:text-darkestGrey">
+        Started reading
+      </span>
+    </div>
+      <hr class="text-darkGrey dark:text-darkerGrey mt-6 mb-6 clear-both">
+  </div>
+</div>
+<div class="mb-3 grid grid-cols-4 md:grid-cols-6">
+  <div class="col-span-4 md:col-span-4 ml-2 md:ml-2">
+  <div class="mb-4">
+    <p class="font-semibold text-xs md:text-sm">22 December 2024
+    <a class=" pb-4 text-xs md:text-sm standard-link float-right" href="/journal_entries/jjjjjjjj-0000-0000-0000-000000000005/edit?return_to=%2Fjournal%3Fbook_id%3Dcccccccc-cccc-cccc-cccc-cccccccccccc">Edit</a></p>
+  </div>
+    <div class="mt-2 mb-4">
+      <span title="Paused reading of book" class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-[#F6DEAD] dark:bg-[#F1CB7F] text-[#5D503E] dark:text-[#3D3223]">
+        Paused
+      </span>
+        <div class="relative">
+          <div class="overflow-hidden h-4 mt-3 mb-3 w-7/12 float-left text-xs flex rounded-md bg-darkGrey dark:bg-darkerGrey">
+            <div style="width:26.000%" class="shadow-none flex flex-col whitespace-nowrap text-white dark:text-darkestGrey justify-center bg-teal-500 dark:bg-teal-400"></div>
+          </div>
+          <div class="inline text-teal-500 dark:text-teal-400 text-xs float-left ml-1 mt-3 font-semibold">26%</div>
+        </div>
+    </div>
+      <hr class="text-darkGrey dark:text-darkerGrey mt-8 mb-4 clear-both">
+  </div>
+</div>
+<div class="mb-3 grid grid-cols-4 md:grid-cols-6">
+  <div class="col-span-4 md:col-span-4 ml-2 md:ml-2">
+  <div class="mb-4">
+    <p class="font-semibold text-xs md:text-sm">20 February 2024
+    <a class=" pb-4 text-xs md:text-sm standard-link float-right" href="/journal_entries/jjjjjjjj-0000-0000-0000-000000000017/edit?return_to=%2Fjournal%3Fbook_id%3Dcccccccc-cccc-cccc-cccc-cccccccccccc">Edit</a></p>
+  </div>
+    <div class="mt-2 mb-4">
+      <div class="relative">
+        <div class="overflow-hidden h-4 mt-3 mb-3 w-7/12 float-left text-xs flex rounded-md bg-darkGrey dark:bg-darkerGrey">
+          <div style="width:4.000%" class="shadow-none flex flex-col whitespace-nowrap text-white dark:text-darkestGrey justify-center bg-teal-500 dark:bg-teal-400"></div>
+        </div>
+        <div class="inline text-teal-500 dark:text-teal-400 text-xs float-left ml-1 mt-3 font-semibold">4%</div>
+      </div>
+      <p class="clear-both text-xs text-darkerGrey dark:text-lightGrey mb-2 font-medium">
+          27 pages read
+          <span class="font-normal">(27 pages out of 672)</span>
+      </p>
+    </div>
+      <hr class="text-darkGrey dark:text-darkerGrey mt-8 mb-4 clear-both">
+  </div>
+</div>
+</span>
+"#;
+
+  #[test]
+  fn parse_journal_maps_badges_and_progress() {
+    let activities = parse_journal(JOURNAL_FIXTURE, 10, 0);
+    assert_eq!(activities.len(), 3);
+
+    // "Starting reading this book" badge
+    assert_eq!(activities[0].event, "user_book_read_started");
+    assert_eq!(activities[0].action_at, "2024-02-20T12:00:00Z");
+
+    // "Paused reading of book" badge falls through to the status_read catch-all
+    assert_eq!(activities[1].event, "status_read");
+    assert_eq!(activities[1].action_at, "2024-12-22T12:00:00Z");
+
+    // progress entry reads the width style off the nested bar div
+    assert_eq!(activities[2].event, "progress_updated");
+    assert_eq!(activities[2].metadata["progress"], json!(4));
+    assert_eq!(activities[2].metadata["progress_was"], json!(0));
+  }
+
+  #[test]
+  fn parse_journal_applies_limit_and_offset() {
+    let activities = parse_journal(JOURNAL_FIXTURE, 2, 1);
+    assert_eq!(activities.len(), 2);
+    assert_eq!(activities[0].event, "status_read"); // first entry (started) skipped
+    assert_eq!(activities[1].event, "progress_updated");
+  }
+
+  // Synthetic: the test account has no journal notes or quotes to capture, so
+  // the note/quote parsing path is still locked against this hand-built snippet.
+  const JOURNAL_NOTE_QUOTE_FIXTURE: &str = r#"
+<span class="journal-entry-panes">
+  <div>
+    <p class="font-semibold">19 October 2026</p>
+    <div class="trix-content"><div>Great world-building.</div></div>
+  </div>
+  <div>
+    <p class="font-semibold">20 October 2026</p>
+    <div class="trix-content"><blockquote>Honor is dead.</blockquote></div>
+  </div>
+</span>
+"#;
+
+  #[test]
+  fn parse_journal_maps_notes_and_quotes() {
+    let activities = parse_journal(JOURNAL_NOTE_QUOTE_FIXTURE, 10, 0);
+    assert_eq!(activities.len(), 2);
+    assert_eq!(activities[0].event, "note");
+    assert_eq!(activities[0].entry, "Great world-building.");
+    assert_eq!(activities[1].event, "quote");
+    assert_eq!(activities[1].entry, "Honor is dead.");
   }
 }
