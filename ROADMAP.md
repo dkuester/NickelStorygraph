@@ -34,6 +34,10 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] Cookie import: `import-cookies` CLI subcommand merges a `.adds/NickelStorygraph/cookies.ini` into `config.ini` line-by-line (no `[General]` header) and deletes the file afterwards; settings dialog got an "Import cookies" row. Not `.txt`: the firmware converts any onboard `.txt` into an EPUB and lists it in the library, exposing the token as a "book" (found in the Tolino device test)
 - [x] Firmware check reads the third field of `.kobo/version` (`serial,kernel,firmware,...`); the first cut parsed the serial number and parked the plugin on every device (found in the Tolino device test)
 - [x] Verified with a live session: a valid `remember_user_token` re-auths a stale/blank `session_cookie` transparently, so no session write-back is needed — only the remember token has to stay fresh
+- [x] Search text without the series: Kobo titles like "Good Boy (The Northern Weird Project)" made both auto-link and the prefilled manual search return nothing; bracketed segments are now dropped (found in the Tolino device test)
+- [x] Journal: "Paused reading of book" / "Resumed reading of book" badges get their own events instead of showing as "Marked as Read"
+- [x] Expired login is a user-facing message (it used to surface as "unexpected error, please report this"), and it and the Cloudflare message point to the cookie import; README covers `cookies.ini` and the real log location
+- [x] "Log in" row removed from Settings: email/password login always fails behind Cloudflare's bot check; the dialog code stays for when that changes
 
 ## Quick wins
 
