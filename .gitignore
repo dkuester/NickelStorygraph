@@ -1,9 +1,13 @@
 # Project-specific
 CLAUDE.md
+NEXT_SESSION.md
 PLAN.md
 plan.md
 KoboRoot.tgz
 hook/Kobo.tgz
+
+# macOS metadata
+.DS_Store
 
 # Rust build output
 cli/target/
