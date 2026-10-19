@@ -38,6 +38,8 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] Journal: "Paused reading of book" / "Resumed reading of book" badges get their own events instead of showing as "Marked as Read"
 - [x] Expired login is a user-facing message (it used to surface as "unexpected error, please report this"), and it and the Cloudflare message point to the cookie import; README covers `cookies.ini` and the real log location
 - [x] "Log in" row removed from Settings: email/password login always fails behind Cloudflare's bot check; the dialog code stays for when that changes
+- [x] Shop books link again: the Tolino shop leaves Nickel's `ISBN` column empty (0 of 362 shop books in a real library), and a missing ISBN aborted auto-link before the title search. The ISBN is now read from the shop's cover URL (`…/9781068563119_A62207078/cover`, 350 of 362 with a valid check digit), with the title search as fallback (found in the Tolino device test)
+- [x] The in-book "Manually link book" entry also uses the bracket-free search text (missed in the first fix)
 
 ## Quick wins
 
