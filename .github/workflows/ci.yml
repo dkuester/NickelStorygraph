@@ -1,0 +1,74 @@
+# GitHub counterpart of .forgejo/workflows: static checks on the host, then the
+# full cross build inside the toolchain image published by toolchain.yml.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (fmt, clippy, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just lint
+
+  symbols:
+    name: Hook symbols / 5.18 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 test/check_symbols.py
+
+  build:
+    name: Cross build + package
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/nickelstorygraph-toolchain:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          # git describe derives the version from the nearest tag.
+          fetch-depth: 0
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /cargo/registry
+            cli/target
+          key: cross-${{ hashFiles('cli/Cargo.lock') }}
+          restore-keys: cross-
+      - run: just build package
+      - run: just test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NickelStorygraph-${{ github.sha }}
+          path: |
+            hook/Kobo.tgz
+            mnt/onboard/.adds/NickelStorygraph/
+          if-no-files-found: error
