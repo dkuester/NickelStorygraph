@@ -67,6 +67,13 @@ JournalEntry::JournalEntry(QJsonObject doc, QWidget *parent) : QFrame(parent) {
   } else if (event == "status_stopped") {
     icon->setPixmap(QPixmap(Files::status_stopped));
     label->setText(t("Stopped reading"));
+  } else if (event == "status_paused") {
+    // No dedicated pause icon; the "stopped" one is the closest match.
+    icon->setPixmap(QPixmap(Files::status_stopped));
+    label->setText(t("Paused reading"));
+  } else if (event == "status_resumed") {
+    icon->setPixmap(QPixmap(Files::user_book_read_started));
+    label->setText(t("Resumed reading"));
   } else if (event == "progress_updated") {
     icon->setPixmap(QPixmap(Files::progress_updated));
     QJsonObject metadata = doc.value("metadata").toObject();
