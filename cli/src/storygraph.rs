@@ -1938,6 +1938,12 @@ fn parse_journal(html: &str, limit: usize, offset: usize) -> Vec<JournalActivity
       } else if title.contains("stop") || title.contains("dnf") || title.contains("did not finish")
       {
         "status_stopped"
+      } else if title.contains("paused") {
+        // "Paused reading of book"
+        "status_paused"
+      } else if title.contains("resumed") {
+        // "Resumed reading of book"
+        "status_resumed"
       } else {
         "status_read"
       };
@@ -2652,8 +2658,8 @@ mod tests {
     assert_eq!(activities[0].event, "user_book_read_started");
     assert_eq!(activities[0].action_at, "2024-02-20T12:00:00Z");
 
-    // "Paused reading of book" badge falls through to the status_read catch-all
-    assert_eq!(activities[1].event, "status_read");
+    // "Paused reading of book" badge
+    assert_eq!(activities[1].event, "status_paused");
     assert_eq!(activities[1].action_at, "2024-12-22T12:00:00Z");
 
     // progress entry reads the width style off the nested bar div
@@ -2663,10 +2669,19 @@ mod tests {
   }
 
   #[test]
+  fn parse_journal_maps_resumed_badge() {
+    // The real fixture only has a paused entry; a resumed one carries the same
+    // markup with a different title.
+    let html = JOURNAL_FIXTURE.replace("Paused reading of book", "Resumed reading of book");
+    let activities = parse_journal(&html, 10, 0);
+    assert_eq!(activities[1].event, "status_resumed");
+  }
+
+  #[test]
   fn parse_journal_applies_limit_and_offset() {
     let activities = parse_journal(JOURNAL_FIXTURE, 2, 1);
     assert_eq!(activities.len(), 2);
-    assert_eq!(activities[0].event, "status_read"); // first entry (started) skipped
+    assert_eq!(activities[0].event, "status_paused"); // first entry (started) skipped
     assert_eq!(activities[1].event, "progress_updated");
   }
 
