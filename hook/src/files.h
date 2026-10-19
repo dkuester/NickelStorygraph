@@ -6,7 +6,10 @@ constexpr char const *settings = "/mnt/onboard/.adds/NickelStorygraph/settings.i
 constexpr char const *koboSettings = "/mnt/onboard/.kobo/Kobo/Kobo eReader.conf";
 constexpr char const *cli = "/mnt/onboard/.adds/NickelStorygraph/cli";
 constexpr char const *adds_directory = "/mnt/onboard/.adds/NickelStorygraph";
-constexpr char const *cookies = "/mnt/onboard/.adds/NickelStorygraph/cookies.txt";
+// Not .txt: Tolino/Kobo firmware converts any .txt on onboard into an EPUB and
+// adds it to the library, which would expose the session token as a "book".
+// The CLI deletes this file after a successful import.
+constexpr char const *cookies = "/mnt/onboard/.adds/NickelStorygraph/cookies.ini";
 
 // Cleanup target for hardcover_uninstall(): earlier builds dropped a
 // "StoryGraph" entry into NickelMenu's own config directory; no longer
