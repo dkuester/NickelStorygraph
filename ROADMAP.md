@@ -21,6 +21,7 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] Error propagation in `update` (ISBN/search errors no longer swallowed)
 - [x] German + abbreviated month names; HTML-escaped review text
 - [x] Slug auto-caching, magic-static singletons, `calloc`-hack documented
+- [x] Update check in the home menu (queries GitHub releases, compares against the git-describe version)
 
 ## Quick wins
 
@@ -76,6 +77,24 @@ cookies and writes them to the device.
 
 - **Why:** the most painful point in the whole flow.
 - **Effort:** medium.
+
+### On-device OTA update
+Update the plugin directly on the device. The install is split across two
+filesystems, so "OTA" is inherently two-phase:
+- CLI + config.ini live on /mnt/onboard (writable) — replace in place,
+  preserving config.ini (it holds the session cookie).
+- The hook .so lives on the read-only rootfs — stage the new Kobo.tgz to
+  .kobo/ and let firmware 5.18+ extract it on next boot, then prompt a reboot.
+
+- **Prereq:** the update check in the home menu (Story 1); the OTA flow reuses
+  its release lookup and version comparison.
+- **Why:** the manual copy-reboot-install dance is why users fall behind on
+  versions; OTA removes it.
+- **Blocker:** no rollback — a broken .so leaves the plugin dead until a manual
+  fix. Back up the old .so (e.g. libstorygraph.so.bak on onboard) before
+  staging as a minimal safety net.
+- **Effort:** medium-high. Ship in two steps: (1) CLI/config in-place update
+  (no reboot), (2) Kobo.tgz staging + reboot + post-boot version verification.
 
 ## Low priority (optional)
 

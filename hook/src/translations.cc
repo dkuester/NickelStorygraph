@@ -185,6 +185,11 @@ const Entry kDe[] = {
   {"Your StoryGraph shelf has this book at %1%. Keep that progress?", "Dein StoryGraph-Regal hat dieses Buch bei %1%. Fortschritt behalten?"},
   {"<year> Reading Goals", "Leseziele <year>"},
 
+  // Update check.
+  {"A new version is available: %1<br>You are running %2.", "Eine neue Version ist verfügbar: %1<br>Du verwendest %2."},
+  {"Check for updates", "Nach Updates suchen"},
+  {"You're up to date (%1).", "Du bist auf dem neuesten Stand (%1)."},
+
   // Review moods (displayed in the review dialog).
   {"adventurous", "abenteuerlich"},
   {"challenging", "herausfordernd"},

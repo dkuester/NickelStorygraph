@@ -1,3 +1,4 @@
+pub mod checkupdate;
 pub mod getfeed;
 pub mod getgoals;
 pub mod getstreak;

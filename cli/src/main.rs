@@ -5,14 +5,15 @@ use crate::commands::listbookmarks;
 use crate::commands::listeditions;
 use crate::commands::listreading;
 use crate::commands::{
-  getfeed, getgoals, getstreak, getuser, getuserbook, insertjournal, listjournal, login, search,
-  setuserbook, switchedition, syncedition, update, updatejournal,
+  checkupdate, getfeed, getgoals, getstreak, getuser, getuserbook, insertjournal, listjournal,
+  login, search, setuserbook, switchedition, syncedition, update, updatejournal,
 };
 use crate::config::CONFIG;
 use crate::utils::{UserError, VERSION, write_logfile};
 
 mod commands;
 mod storygraph;
+mod updater;
 
 mod config;
 mod isbn;
@@ -35,6 +36,7 @@ struct Arguments {
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 enum Commands {
+  CheckUpdate(checkupdate::CheckUpdate),
   GetFeed(getfeed::GetFeed),
   GetGoals(getgoals::GetGoals),
   GetStreak(getstreak::GetStreak),
@@ -77,6 +79,7 @@ fn main() {
   };
 
   let res = match command {
+    Commands::CheckUpdate(args) => checkupdate::run(args),
     Commands::GetFeed(args) => getfeed::run(args),
     Commands::GetGoals(args) => getgoals::run(args),
     Commands::GetStreak(args) => getstreak::run(args),

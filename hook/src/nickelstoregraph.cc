@@ -15,6 +15,7 @@
 
 #include <NickelHook.h>
 
+#include "cli.h"
 #include "files.h"
 #include "menucontroller.h"
 #include "feed/feeddialog.h"
@@ -370,6 +371,30 @@ QString scaledNavIconPath() {
   return tempOut;
 }
 
+void checkForUpdates() {
+  CLI *cli = CLI::checkUpdate();
+  QObject::connect(cli, &CLI::response, [](QJsonObject doc) {
+    bool upToDate = doc.value("up_to_date").toBool();
+    QString current = doc.value("current").toString();
+    QString latest = doc.value("latest").toString();
+
+    ConfirmationDialog *dialog = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
+    ConfirmationDialog__setTitle(dialog, "StoryGraph");
+    if (upToDate) {
+      ConfirmationDialog__setText(dialog, t("You're up to date (%1).").arg(current));
+    } else {
+      ConfirmationDialog__setText(dialog,
+          t("A new version is available: %1<br>You are running %2.").arg(latest, current));
+    }
+    ConfirmationDialog__setAcceptButtonText(dialog, "OK");
+    ConfirmationDialog__showCloseButton(dialog, true);
+
+    QObject::connect(dialog, &QDialog::accepted, dialog, &QObject::deleteLater);
+    QObject::connect(dialog, &QDialog::rejected, dialog, &QObject::deleteLater);
+    dialog->open();
+  });
+}
+
 void showStorygraphHomeMenu(QWidget *anchor) {
   Settings *settings = Settings::getInstance();
   if (!settings->getHomeMenuEnabled()) return;
@@ -381,6 +406,7 @@ void showStorygraphHomeMenu(QWidget *anchor) {
     items.append({t("Community Feed"), 2});
   if (settings->getHomeMenuGoals())
     items.append({t("Reading Goals"), 3});
+  items.append({t("Check for updates"), 5});
   items.append({t("Settings"), 4});
 
   if (!anchor) return;
@@ -414,6 +440,7 @@ void showStorygraphHomeMenu(QWidget *anchor) {
       // No book is open on the home screen, so there's no contentId to show
       // sync/progress info for - suppress the t("Book information") section.
       else if (val == 4) SettingsDialog::show(true);
+      else if (val == 5) checkForUpdates();
     });
     QObject::connect(mti, SIGNAL(tapped(bool)), action, SIGNAL(triggered()));
   }
