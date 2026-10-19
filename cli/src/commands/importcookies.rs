@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use argh::FromArgs;
 use serde_json::json;
 
@@ -16,11 +16,8 @@ pub struct ImportCookies {
   pub path: String,
 }
 
-pub fn run(args: ImportCookies) -> Result<()> {
-  log!("{} {:?}", &*VERSION, args);
-
-  let content = std::fs::read_to_string(&args.path).context("Failed to read cookies file")?;
-
+/// Extracts `(session_cookie, remember_user_token)` from bare `key=value` lines.
+fn parse_cookies(content: &str) -> Result<(String, String)> {
   let mut session_cookie = String::new();
   let mut remember_user_token = String::new();
   for line in content.lines() {
@@ -42,8 +39,47 @@ pub fn run(args: ImportCookies) -> Result<()> {
     );
   }
 
+  Ok((session_cookie, remember_user_token))
+}
+
+pub fn run(args: ImportCookies) -> Result<()> {
+  log!("{} {:?}", &*VERSION, args);
+
+  let content = std::fs::read_to_string(&args.path).map_err(|_| {
+    UserError(
+      "No cookies file found. Put <i>cookies.ini</i> into <i>.adds/NickelStorygraph/</i> first."
+        .to_owned(),
+    )
+  })?;
+
+  let (session_cookie, remember_user_token) = parse_cookies(&content)?;
   config::set_cookies(&session_cookie, &remember_user_token)?;
+
+  // The cookies now live in config.ini; don't leave a second plaintext copy of
+  // the session token lying around on onboard storage.
+  if let Err(err) = std::fs::remove_file(&args.path) {
+    log!("could not delete cookies file {}: {}", args.path, err);
+  }
 
   emit_json!("{}", json!({ "imported": true }));
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn parse_cookies_reads_both_values() {
+    let (session, token) =
+      parse_cookies("session_cookie = abc%3D\nremember_user_token=eyXYZ\nother=1").unwrap();
+    assert_eq!(session, "abc%3D");
+    assert_eq!(token, "eyXYZ");
+  }
+
+  #[test]
+  fn parse_cookies_requires_both_values() {
+    assert!(parse_cookies("session_cookie=abc\n").is_err());
+    assert!(parse_cookies("remember_user_token=xyz\n").is_err());
+  }
 }
