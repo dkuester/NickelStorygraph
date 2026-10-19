@@ -109,7 +109,7 @@ Accessible from the Kobo home screen without opening a book (works alongside [Ni
 2. Copy `Kobo.tgz` into the `.kobo/` folder on the device root. The `.kobo` folder may be hidden — on Windows, enable "Show hidden items" in File Explorer; on macOS, press `Cmd+Shift+.` in Finder.
 3. Copy the `NickelStorygraph` folder into the `.adds/` folder on the device root (so that you end up with `.adds/NickelStorygraph/`).
 4. Safely eject the device — it will install the plugin automatically on reconnect.
-5. Once the device restarts, reconnect via USB. Open the `.adds/NickelStorygraph/` folder, copy `config_example.ini`, rename the copy to `config.ini`, and fill in your credentials (see below).
+5. Once the device restarts, reconnect via USB. Open the `.adds/NickelStorygraph/` folder, copy `config_example.ini`, rename the copy to `config.ini`, and add your StoryGraph cookies (see below).
 
 ## Uninstall
 
@@ -121,20 +121,25 @@ Alternatively, delete `.adds/NickelStorygraph/` from the device's internal stora
 
 ## Configuration
 
-The config file lives at `.adds/NickelStorygraph/config.ini` on the Kobo's internal storage. Open `config_example.ini` for the full list of options with descriptions. The required settings are your StoryGraph session cookies:
+The config file lives at `.adds/NickelStorygraph/config.ini` on the Kobo's internal storage. Open `config_example.ini` for the full list of options with descriptions. The only required settings are your StoryGraph cookies.
 
-```ini
-; Obtain from browser DevTools → Application → Cookies → app.thestorygraph.com
-session_cookie = <value of _storygraph_session>
-remember_user_token = <value of remember_user_token>
+### StoryGraph cookies
 
-; Optional — cached automatically; set manually to skip the one-time homepage lookup
-user_slug = yourname
-```
+1. Log in to StoryGraph in a browser, open DevTools (`F12`), go to **Application → Storage → Cookies → `https://app.thestorygraph.com`**, and copy the values of `_storygraph_session` and `remember_user_token`.
+2. Create a file `.adds/NickelStorygraph/cookies.ini` on the device with these two lines:
 
-To get your cookies, log in to StoryGraph in a browser, open DevTools (`F12`), go to **Application → Storage → Cookies → `https://app.thestorygraph.com`**, and copy the values for `_storygraph_session` and `remember_user_token`.
+   ```ini
+   session_cookie=<value of _storygraph_session>
+   remember_user_token=<value of remember_user_token>
+   ```
 
-Session cookies expire periodically. If syncing stops working, update these values in `config.ini` with fresh cookies from your browser.
+3. Eject the device, open the StoryGraph **Settings** and tap **Import cookies**. The cookies are written to `config.ini` and `cookies.ini` is deleted.
+
+> **Don't name the file `cookies.txt`:** the firmware turns every `.txt` file on the device into a book in your library, which would show your login as a readable "book".
+
+You can also put the same two lines into `config.ini` directly. `user_slug` (your profile name) is cached automatically on first use.
+
+`remember_user_token` is what keeps you logged in; StoryGraph renews the session cookie from it on its own. When the plugin reports that your login has expired, repeat the steps above with fresh cookies.
 
 ### Key options
 
@@ -186,14 +191,14 @@ If a book can't be found automatically, a prompt appears to link it manually. Us
 **The StoryGraph icon doesn't appear when I open a book.**
 The plugin may not have installed correctly. Reconnect the Kobo via USB and confirm that `.adds/NickelStorygraph/nickelstoregraph.so` exists on the device. If the file is missing, repeat the installation steps.
 
-**Syncing does nothing / I get an error about credentials.**
-Your session cookies have expired. Log back in to StoryGraph in a browser, copy fresh values for `_storygraph_session` and `remember_user_token`, and update `config.ini`.
+**Syncing does nothing / I get an error about my login or a Cloudflare check.**
+Your StoryGraph cookies have expired. Get fresh ones and import them as described in [StoryGraph cookies](#storygraph-cookies).
 
 **A book can't be found or links to the wrong edition.**
 Use **Book management → Manually link book** to search for the correct edition and link it. Once linked, all future syncs use that edition directly.
 
 **Something else is broken.**
-Go to **Settings → Save system logs**, then reconnect the Kobo via USB and retrieve the log file from `.adds/NickelStorygraph/` to share when reporting the issue.
+Go to **Settings → Save system logs**, then reconnect the device via USB. The system log is saved in the root of the device's storage as `NickelStorygraph_<date>_<time>.log`. The CLI writes its own log to `.adds/NickelStorygraph/nickelstoregraph.log` on errors, and on every call with `debug = true` in `config.ini`. Remove any cookie values before sharing a log.
 
 ## Building - Developer Info
 

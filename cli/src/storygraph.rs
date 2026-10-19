@@ -162,11 +162,20 @@ fn require_credentials() -> Result<()> {
   Ok(())
 }
 
+/// How to get fresh cookies onto the device; shared by the expired-login and
+/// Cloudflare messages.
+const REFRESH_COOKIES_HINT: &str = "Log in to StoryGraph in a browser, put fresh <i>session_cookie</i> and <i>remember_user_token</i> lines into <i>.adds/NickelStorygraph/cookies.ini</i>, then use <i>Settings → Import cookies</i>.";
+
 /// Returns Err if the final response URL ended up on the sign-in page.
 fn check_session(response: &Response) -> Result<()> {
   if response.url().path().contains("/users/sign_in") {
-    bail!(
-      "StoryGraph session has expired. Please update <i>session_cookie</i> and <i>remember_user_token</i> in <i>.adds/NickelStorygraph/config.ini</i>."
+    // A stale session_cookie alone is renewed through remember_user_token, so
+    // landing on the sign-in page means the remember token itself is dead.
+    return Err(
+      UserError(format!(
+        "Your StoryGraph login has expired.<br><br>{REFRESH_COOKIES_HINT}"
+      ))
+      .into(),
     );
   }
   Ok(())
@@ -199,8 +208,9 @@ fn check_blocked(res: Response, context: &str) -> Result<Response> {
 
   if is_cloudflare_challenge(&status, &body) {
     return Err(UserError(
-      "StoryGraph blocked the request with a Cloudflare bot check (HTTP 403).<br><br>If syncing stopped working, your cookies have probably expired: log in to StoryGraph in a browser and update <i>session_cookie</i> and <i>remember_user_token</i> in <i>.adds/NickelStorygraph/config.ini</i>. If they are fresh, wait a few minutes and try again."
-        .to_owned(),
+      format!(
+        "StoryGraph blocked the request with a Cloudflare bot check (HTTP 403).<br><br>If syncing stopped working, your cookies have probably expired. {REFRESH_COOKIES_HINT} If they are fresh, wait a few minutes and try again."
+      ),
     )
     .into());
   }
