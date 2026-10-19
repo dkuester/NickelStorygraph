@@ -1,5 +1,8 @@
 ﻿#include <dlfcn.h>
 
+#include <stdio.h>
+#include <string.h>
+
 #include <QApplication>
 #include <QFont>
 #include <QHBoxLayout>
@@ -62,11 +65,12 @@ void (*TouchLabel__setHitStateEnabled)(TouchLabel *_this, bool enabled);
 
 // Nickel's widget classes are allocated by hand because their constructors are
 // not exported symbols: we resolve the constructor function pointers below
-// (via NickelHook) and call them on raw zeroed storage. The fixed sizes
-// (2048 / 512 / 1024 bytes) are hand-measured object sizes for the Qt6 /
-// firmware 5.18+ class layout and must be >= sizeof(the class) or the
-// constructor overruns the allocation and corrupts the heap. Re-measure and
-// update these when the firmware layout changes.
+// (via NickelHook) and call them on raw zeroed storage. Every allocation is a
+// uniform 2048 bytes — a generous upper bound, not an exact sizeof: the
+// hand-measured Qt6 / firmware 5.18 layouts fit with large headroom, so a
+// modest layout growth on newer firmware (5.19+/6.x) stays inside the buffer
+// without re-measuring. The buffer must be >= sizeof(the class) or the
+// constructor overruns it and corrupts the heap.
 TouchLabel *construct_TouchLabel(QWidget *parent) {
   TouchLabel *label = reinterpret_cast<TouchLabel *>(calloc(1, 2048));
   TouchLabel__constructor(label, parent, Qt::WindowType());
@@ -84,7 +88,7 @@ N3ButtonLabel *construct_N3ButtonLabel(QWidget *parent) {
 void (*TouchCheckBox__constructor)(TouchCheckBox *_this, QWidget *parent);
 
 TouchCheckBox *construct_TouchCheckBox(QWidget *parent) {
-  TouchCheckBox *checkbox = reinterpret_cast<TouchCheckBox *>(calloc(1, 512));
+  TouchCheckBox *checkbox = reinterpret_cast<TouchCheckBox *>(calloc(1, 2048));
   TouchCheckBox__constructor(checkbox, parent);
   return checkbox;
 }
@@ -104,7 +108,7 @@ void (*MenuTextItem__setSelected)(MenuTextItem *_this, bool selected);
 void (*MenuTextItem__registerForTapGestures)(MenuTextItem *_this);
 
 MenuTextItem *construct_MenuTextItem(QWidget *parent, bool checkable, bool italic) {
-  MenuTextItem *item = reinterpret_cast<MenuTextItem *>(calloc(1, 1024));
+  MenuTextItem *item = reinterpret_cast<MenuTextItem *>(calloc(1, 2048));
   MenuTextItem__constructor(item, parent, checkable, italic);
   return item;
 }
@@ -133,13 +137,13 @@ void (*KeyboardReceiver__constructor)(KeyboardReceiver *__this, QLineEdit *lineE
 void (*KeyboardReceiver__TextEdit_constructor)(KeyboardReceiver *__this, QTextEdit *parent, bool unknown);
 
 KeyboardReceiver *construct_KeyboardReceiver(QLineEdit *lineEdit) {
-  KeyboardReceiver *receiver = reinterpret_cast<KeyboardReceiver *>(calloc(1, 512));
+  KeyboardReceiver *receiver = reinterpret_cast<KeyboardReceiver *>(calloc(1, 2048));
   KeyboardReceiver__constructor(receiver, lineEdit, false);
   return receiver;
 }
 
 KeyboardReceiver *construct_KeyboardReceiver(QTextEdit *textEdit) {
-  KeyboardReceiver *receiver = reinterpret_cast<KeyboardReceiver *>(calloc(1, 512));
+  KeyboardReceiver *receiver = reinterpret_cast<KeyboardReceiver *>(calloc(1, 2048));
   KeyboardReceiver__TextEdit_constructor(receiver, textEdit, false);
   return receiver;
 }
@@ -151,7 +155,7 @@ void (*SearchKeyboardController__setGoText)(SearchKeyboardController *__this, QS
 void (*TouchLineEdit__constructor)(TouchLineEdit *__this, QWidget *parent);
 
 TouchLineEdit *construct_TouchLineEdit(QWidget *parent) {
-  TouchLineEdit *lineEdit = reinterpret_cast<TouchLineEdit *>(calloc(1, 512));
+  TouchLineEdit *lineEdit = reinterpret_cast<TouchLineEdit *>(calloc(1, 2048));
   TouchLineEdit__constructor(lineEdit, parent);
   return lineEdit;
 }
@@ -159,7 +163,7 @@ TouchLineEdit *construct_TouchLineEdit(QWidget *parent) {
 void (*SettingContainer__constructor)(SettingContainer *__this, QWidget *parent);
 
 SettingContainer *construct_SettingContainer(QWidget *parent) {
-  SettingContainer *container = reinterpret_cast<SettingContainer *>(calloc(1, 512));
+  SettingContainer *container = reinterpret_cast<SettingContainer *>(calloc(1, 2048));
   SettingContainer__constructor(container, parent);
   return container;
 }
@@ -168,7 +172,7 @@ void (*TouchTextEdit__constructor)(TouchTextEdit *__this, QWidget *parent);
 void (*TouchTextEdit__setCustomPlaceholderText)(TouchTextEdit *__this, QString const &text);
 
 TouchTextEdit *construct_TouchTextEdit(QWidget *parent) {
-  TouchTextEdit *touchText = reinterpret_cast<TouchTextEdit *>(calloc(1, 512));
+  TouchTextEdit *touchText = reinterpret_cast<TouchTextEdit *>(calloc(1, 2048));
   TouchTextEdit__constructor(touchText, parent);
   return touchText;
 }
@@ -178,7 +182,7 @@ void (*PowerTimer__fireAt)(PowerTimer *__this, QDateTime const &datatime);
 int (*PowerTimer__timeRemaining)(PowerTimer *__this);
 
 PowerTimer *construct_PowerTimer(QString const &name, QObject *parent) {
-  PowerTimer *timer = reinterpret_cast<PowerTimer *>(calloc(1, 512));
+  PowerTimer *timer = reinterpret_cast<PowerTimer *>(calloc(1, 2048));
   PowerTimer__constructor(timer, name, parent);
   return timer;
 }
@@ -454,7 +458,72 @@ void showStorygraphHomeMenu(QWidget *anchor) {
   menu->popup(pos);
 }
 
+// Firmware self-check: the calloc-based widget construction (construct_TouchLabel
+// & co.) relies on the Qt6 class layout. Kobo moved to Qt6 at firmware 5.18;
+// anything older is the Qt5 ABI those constructors do not exist on, so hooking
+// is refused. Newer firmware (5.19+/6.x) is still Qt6 and expected to be
+// ABI-compatible, but the object sizes were measured against 5.18 - accept it
+// with a warning so a layout change is diagnosable instead of silently
+// corrupting the heap. Returning nonzero from init makes NickelHook restore the
+// hooks it just installed and park the plugin, so no calloc and no constructor
+// ever runs on an unsupported layout.
+//
+// The version is read from /mnt/onboard/.kobo/version (a single line such as
+// "5.18.21908") rather than the exported
+// N3SettingsDeviceInformationController::viewFirmwareVersion symbol: a plain
+// file read has no Qt/Nickel dependency and is safe this early in init.
+typedef enum {
+  FW_TOO_OLD,    // Qt5 (4.x / 5.0-5.17): the constructors do not exist here.
+  FW_SUPPORTED,  // exactly 5.18, the layout the object sizes were measured on.
+  FW_UNVERIFIED, // newer (5.19+/6.x): still Qt6, accepted with a warning.
+} FirmwareVerdict;
+
+static FirmwareVerdict firmwareVerdict() {
+  FILE *f = fopen("/mnt/onboard/.kobo/version", "r");
+  if (!f) {
+    nh_log("firmware check: could not read /mnt/onboard/.kobo/version");
+    return FW_TOO_OLD;
+  }
+
+  char buf[64] = {0};
+  bool read = fgets(buf, sizeof(buf), f) != nullptr;
+  fclose(f);
+
+  if (!read) {
+    nh_log("firmware check: /mnt/onboard/.kobo/version is empty");
+    return FW_TOO_OLD;
+  }
+
+  // Trim trailing newline/whitespace.
+  char *end = buf + strlen(buf);
+  while (end > buf && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t'))
+    *--end = '\0';
+
+  int major = 0;
+  int minor = 0;
+  if (sscanf(buf, "%d.%d", &major, &minor) < 2) {
+    nh_log("firmware check: unrecognized version '%s' - refusing to hook", buf);
+    return FW_TOO_OLD;
+  }
+
+  if (major < 5 || (major == 5 && minor < 18)) {
+    nh_log("firmware check: version '%s' is pre-5.18 (Qt5) - refusing to hook", buf);
+    return FW_TOO_OLD;
+  }
+  if (major == 5 && minor == 18) {
+    nh_log("firmware check: version '%s' -> supported", buf);
+    return FW_SUPPORTED;
+  }
+  nh_log("firmware check: version '%s' is newer than 5.18 - hooking, but the object sizes are unverified for this layout", buf);
+  return FW_UNVERIFIED;
+}
+
 int nickelstoregraph_init() {
+  if (firmwareVerdict() == FW_TOO_OLD) {
+    nh_log("nickelstoregraph_init: firmware is below 5.18 (Qt5) - refusing to hook (calloc sizes are Qt6-specific)");
+    return 1;
+  }
+
   void *nmHandle = dlopen("/usr/local/Kobo/imageformats/libnm.so", RTLD_NOLOAD | RTLD_LAZY);
   if (nmHandle) {
     nmMenuHook2 = reinterpret_cast<NmMenuHook2>(dlsym(nmHandle, "_nm_menu_hook2"));
@@ -564,7 +633,7 @@ _nh_MainNavView__constructor(MainNavView *_this, QWidget *parent) {
     return;
   }
 
-  MainNavButton *btn = reinterpret_cast<MainNavButton *>(calloc(1, 256));
+  MainNavButton *btn = reinterpret_cast<MainNavButton *>(calloc(1, 2048));
   if (!btn) return;
 
   MainNavButton__constructor(btn, parent);
