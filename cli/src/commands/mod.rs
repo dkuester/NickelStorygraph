@@ -4,6 +4,7 @@ pub mod getgoals;
 pub mod getstreak;
 pub mod getuser;
 pub mod getuserbook;
+pub mod importcookies;
 pub mod insertjournal;
 pub mod listbookmarks;
 pub mod listeditions;

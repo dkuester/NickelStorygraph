@@ -122,6 +122,10 @@ CLI *CLI::login(QString email, QString password, Options options) {
   return new CLI({"login", email}, options);
 }
 
+CLI *CLI::importCookies(Options options) {
+  return new CLI({"import-cookies", Files::cookies}, options);
+}
+
 QStringList CLI::getIdentifier(Options options) {
   QString contentId = options.contentId.isEmpty() ? SyncController::getInstance()->contentId : options.contentId;
   QStringList identifiers = {"--content-id", contentId};

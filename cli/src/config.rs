@@ -163,6 +163,58 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
   }
 });
 
+/// Returns `content` with the `session_cookie` and `remember_user_token` lines
+/// replaced (or appended when absent), preserving every other line and the bare
+/// `key=value` format the hook's QSettings (`IniFormat`) expects — no
+/// `[General]` section header is ever emitted.
+fn rewrite_cookies(content: &str, session_cookie: &str, remember_user_token: &str) -> String {
+  let mut out: Vec<String> = Vec::new();
+  let mut wrote_session = false;
+  let mut wrote_token = false;
+  for line in content.lines() {
+    if let Some((key, _)) = line.split_once('=') {
+      match key.trim() {
+        "session_cookie" => {
+          out.push(format!("session_cookie={session_cookie}"));
+          wrote_session = true;
+          continue;
+        }
+        "remember_user_token" => {
+          out.push(format!("remember_user_token={remember_user_token}"));
+          wrote_token = true;
+          continue;
+        }
+        _ => {}
+      }
+    }
+    out.push(line.to_owned());
+  }
+  if !wrote_session {
+    out.push(format!("session_cookie={session_cookie}"));
+  }
+  if !wrote_token {
+    out.push(format!("remember_user_token={remember_user_token}"));
+  }
+  out.join("\n") + "\n"
+}
+
+/// Updates `config.ini` in place, setting only `session_cookie` and
+/// `remember_user_token` and preserving every other line. serini's own
+/// serializer is deliberately not used here: it emits a `[General]` section
+/// header that QSettings cannot map back onto the root keys.
+pub fn set_cookies(session_cookie: &str, remember_user_token: &str) -> Result<()> {
+  let current_exe = std::env::current_exe().context("Failed to get current binary path")?;
+  let exe_dir = current_exe
+    .parent()
+    .context("Failed to get current binary directory")?;
+  let config_path = exe_dir.join("config.ini");
+
+  let content = fs::read_to_string(&config_path).context("Failed to read config file")?;
+  let merged = rewrite_cookies(&content, session_cookie, remember_user_token);
+  fs::write(&config_path, merged).context("Failed to write config file")?;
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -227,5 +279,26 @@ mod tests {
     assert_eq!(d.sync_daily, 0);
     assert!(!d.auto_sync_default);
     assert!(!d.debug);
+  }
+
+  #[test]
+  fn rewrite_cookies_replaces_and_preserves_other_keys() {
+    let ini = "session_cookie=old\nremember_user_token=oldtoken\nsync_daily=3\ndebug=true\n";
+    let out = rewrite_cookies(ini, "newsess", "newtoken");
+    assert_eq!(
+      out,
+      "session_cookie=newsess\nremember_user_token=newtoken\nsync_daily=3\ndebug=true\n"
+    );
+    // No [General] header may ever be emitted (it breaks the hook's QSettings).
+    assert!(!out.contains("[General]"));
+  }
+
+  #[test]
+  fn rewrite_cookies_appends_missing_keys() {
+    let out = rewrite_cookies("sync_daily=3\n", "newsess", "newtoken");
+    assert_eq!(
+      out,
+      "sync_daily=3\nsession_cookie=newsess\nremember_user_token=newtoken\n"
+    );
   }
 }

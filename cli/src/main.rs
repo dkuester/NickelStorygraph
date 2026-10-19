@@ -5,8 +5,8 @@ use crate::commands::listbookmarks;
 use crate::commands::listeditions;
 use crate::commands::listreading;
 use crate::commands::{
-  checkupdate, getfeed, getgoals, getstreak, getuser, getuserbook, insertjournal, listjournal,
-  login, search, setuserbook, switchedition, syncedition, update, updatejournal,
+  checkupdate, getfeed, getgoals, getstreak, getuser, getuserbook, importcookies, insertjournal,
+  listjournal, login, search, setuserbook, switchedition, syncedition, update, updatejournal,
 };
 use crate::config::CONFIG;
 use crate::utils::{UserError, VERSION, write_logfile};
@@ -42,6 +42,7 @@ enum Commands {
   GetStreak(getstreak::GetStreak),
   GetUser(getuser::GetUser),
   GetUserBook(getuserbook::GetUserBook),
+  ImportCookies(importcookies::ImportCookies),
   InsertJournal(insertjournal::InsertJournal),
   ListBookmarks(listbookmarks::ListBookmarks),
   ListEditions(listeditions::ListEditions),
@@ -85,6 +86,7 @@ fn main() {
     Commands::GetStreak(args) => getstreak::run(args),
     Commands::GetUser(args) => getuser::run(args),
     Commands::GetUserBook(args) => getuserbook::run(args),
+    Commands::ImportCookies(args) => importcookies::run(args),
     Commands::InsertJournal(args) => insertjournal::run(args),
     Commands::ListBookmarks(args) => listbookmarks::run(args),
     Commands::ListEditions(args) => listeditions::run(args),

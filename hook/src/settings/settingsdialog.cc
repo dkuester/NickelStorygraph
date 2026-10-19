@@ -4,6 +4,7 @@
 #include <NickelHook.h>
 
 #include "../cli.h"
+#include "../nickelstoregraph.h"
 #include "../settings.h"
 #include "../synccontroller.h"
 #include "../widgets/label.h"
@@ -215,6 +216,10 @@ QFrame *SettingsDialog::buildGeneral() {
   QObject::connect(loginRow, &MenuRow::triggered, this, &SettingsDialog::openLogin);
   layout->addWidget(loginRow);
 
+  MenuRow *importRow = new MenuRow(t("Import cookies"), MenuRowType::Tap, {{t("Import"), true}}, {}, true);
+  QObject::connect(importRow, &MenuRow::triggered, this, &SettingsDialog::importCookies);
+  layout->addWidget(importRow);
+
   CLI::Options options;
   options.silent = true;
 
@@ -422,6 +427,13 @@ void SettingsDialog::setDebug(bool value) { Settings::getInstance()->setDebug(va
 void SettingsDialog::saveLogs() { nh_dump_log(); }
 
 void SettingsDialog::openLogin() { LoginDialog::show(); }
+
+void SettingsDialog::importCookies() {
+  CLI *cli = CLI::importCookies();
+  QObject::connect(cli, &CLI::response, this, [](QJsonObject) {
+    ConfirmationDialogFactory__showErrorDialog("StoryGraph", t("Cookies imported."));
+  });
+}
 
 void SettingsDialog::setHomeMenuEnabled(bool value) {
   Settings::getInstance()->setHomeMenuEnabled(value);
