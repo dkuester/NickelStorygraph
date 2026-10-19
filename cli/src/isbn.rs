@@ -333,40 +333,70 @@ fn read_epub_isbn(content_id: &str) -> Result<Vec<String>> {
   Ok(isbn)
 }
 
+/// 13-digit runs starting with 978/979, not part of a longer number.
+static ISBN_13_IN_TEXT: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r"(?:^|\D)(97[89]\d{10})(?:\D|$)").expect("valid regex"));
+
+/// Finds an ISBN-13 inside a shop cover URL. The Tolino shop leaves Nickel's
+/// `ISBN` column empty, but its cover URLs carry the ISBN, e.g.
+/// `https://cdp.pageplace.de/cdp/public/publications/DT0400/9781068563119_A62207078/cover`.
+/// Only candidates with a valid check digit are accepted.
+fn isbn_from_cover_url(url: &str) -> Option<Vec<String>> {
+  ISBN_13_IN_TEXT
+    .captures_iter(url)
+    .find_map(|c| normalize_isbn(&c[1]))
+}
+
+/// Reads a column that Nickel stores as TEXT or BLOB depending on the source.
+fn text_or_blob(value: rusqlite::types::ValueRef<'_>) -> Option<String> {
+  match value {
+    rusqlite::types::ValueRef::Text(t) | rusqlite::types::ValueRef::Blob(t) => {
+      Some(String::from_utf8_lossy(t).into_owned())
+    }
+    _ => None,
+  }
+}
+
 fn read_sqlite_isbn(content_id: &str) -> Result<Vec<String>> {
-  let isbn = Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-    .context(format!(
-      "Failed to connect to the database <i>{}</i>",
-      CONFIG.sqlite_path
-    ))?
-    .prepare(
-      "SELECT ISBN
+  let (isbn, image_url) =
+    Connection::open_with_flags(&CONFIG.sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+      .context(format!(
+        "Failed to connect to the database <i>{}</i>",
+        CONFIG.sqlite_path
+      ))?
+      .prepare(
+        "SELECT ISBN, ImageUrl
       FROM content
       WHERE BookTitle is null
       AND ContentId is (?1)
       LIMIT 1;",
-    )
-    .context("Failed to prepare query")?
-    .query_map([&content_id], |row| row.get::<_, Option<String>>(0))
-    .context("Failed to run query")?
-    .next()
-    .context("Query returned no results")?
-    .context("Failed to map query result")?
-    .and_then(|isbn| normalize_isbn(&isbn));
+      )
+      .context("Failed to prepare query")?
+      .query_map([&content_id], |row| {
+        Ok((
+          row.get::<_, Option<String>>(0)?,
+          text_or_blob(row.get_ref(1)?),
+        ))
+      })
+      .context("Failed to run query")?
+      .next()
+      .context("Query returned no results")?
+      .context("Failed to map query result")?;
 
-  match isbn {
-    Some(isbn) => {
-      log!("ISBN from database `{}`", isbn.join(", "));
-      Ok(isbn)
-    }
-    // Store-bought books often have no ISBN in Nickel's database. Return an
-    // empty list like the EPUB path does, so callers can fall back to a
-    // title search instead of giving up here.
-    None => {
-      log!("no ISBN in the database for `{}`", content_id);
-      Ok(Vec::new())
-    }
+  if let Some(isbn) = isbn.as_deref().and_then(normalize_isbn) {
+    log!("ISBN from database `{}`", isbn.join(", "));
+    return Ok(isbn);
   }
+
+  if let Some(isbn) = image_url.as_deref().and_then(isbn_from_cover_url) {
+    log!("ISBN from cover URL `{}`", isbn.join(", "));
+    return Ok(isbn);
+  }
+
+  // No ISBN anywhere: return an empty list like the EPUB path does, so callers
+  // can fall back to a title search instead of giving up here.
+  log!("no ISBN in the database for `{}`", content_id);
+  Ok(Vec::new())
 }
 
 pub fn get_isbn(content_id: &str) -> Vec<String> {
@@ -388,6 +418,30 @@ pub fn get_isbn(content_id: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn isbn_from_cover_url_reads_tolino_shop_urls() {
+    let url = "https://cdp.pageplace.de/cdp/public/publications/DT0400/9781068563119_A62207078/cover?size=large";
+    assert_eq!(
+      isbn_from_cover_url(url),
+      Some(vec!["9781068563119".to_owned(), "1068563117".to_owned()])
+    );
+  }
+
+  #[test]
+  fn isbn_from_cover_url_rejects_bad_check_digit_and_longer_numbers() {
+    // Last digit changed: invalid check digit.
+    assert_eq!(
+      isbn_from_cover_url("https://x/DT0400/9781068563110_A1/cover"),
+      None
+    );
+    // A 978... run embedded in a longer number is not an ISBN.
+    assert_eq!(
+      isbn_from_cover_url("https://x/12397810685631190/cover"),
+      None
+    );
+    assert_eq!(isbn_from_cover_url("https://x/no-isbn/cover"), None);
+  }
 
   #[test]
   fn isbn13_check_digit_known_values() {
