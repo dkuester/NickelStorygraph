@@ -23,14 +23,14 @@ A Kobo eReader plugin that integrates with [StoryGraph](https://app.thestorygrap
 
 ## Why this fork
 
-Upstream NickelStorygraph targets Kobo firmware 4.x, which runs Qt 5.2.1. Kobo/Tolino firmware **5.18** rebased Nickel onto **Qt 6.5.2**, which broke every native plugin. This fork ports the plugin to Qt 6 so it runs on firmware 5.18 and 6.0:
+Upstream NickelStorygraph targets Kobo firmware 4.x, which runs Qt 5.2.1. Kobo/Tolino firmware **5.18** rebased Nickel onto **Qt 6.5.2**, which broke every native plugin. This fork builds the plugin from one source tree for **both** firmware lines — Qt 5 for 4.x and Qt 6 for 5.18 and 6.0 — so it stays mergeable with upstream. For Qt 6:
 
 - three `libnickel` symbols changed ABI (verified against `libnickel.so.1.0.0`; see `test/libnickel-5.18.syms.gz`),
 - Qt 6 turned `Qt::WindowType` into an `enum class`, breaking a constructor call,
 - NickelHook needed a Qt 6 port (Failsafe fix and hook chaining), and
 - packaging and the toolchain changed (`Kobo.tgz` instead of `KoboRoot.tgz`; a Qt 6.5.2 cross toolchain instead of NickelTC).
 
-For firmware 4.x, use the upstream `main` branch. See [Acknowledgements](#acknowledgements) for the people whose work this fork builds on.
+The Qt 5 build keeps upstream's toolchain (`.forgejo/nickeltc`, NickelTC) and `KoboRoot.tgz` packaging; the handful of ABI differences are compile-time switches in `hook/src/nickelstorygraph.cc`. See [Acknowledgements](#acknowledgements) for the people whose work this fork builds on.
 
 > **Note:** This fork and its changes (code, documentation, and tests) were developed with the assistance of AI tools (large language models).
 
@@ -101,16 +101,30 @@ Accessible from the Kobo home screen without opening a book (works alongside [Ni
 
 ## Installation
 
-> **Firmware 5.18+ (Qt6):** this branch targets Kobo/Tolino firmware 5.18 and
-> 6.0, which use Qt 6. Download `Kobo.tgz` (the plugin hook) and the
-> `NickelStorygraph` folder (CLI and config) from the [releases page](../../releases).
-> For firmware 4.x (Qt5), use the `main` branch instead.
+Each release has a download for each firmware line. Check your firmware under **Settings → Device information** (Kobo) or **Settings → About** (Tolino). The `.kobo` and `.adds` folders may be hidden — on Windows, enable "Show hidden items" in File Explorer; on macOS, press `Cmd+Shift+.` in Finder.
 
-1. Connect your Kobo/Tolino to your computer via USB.
-2. Copy `Kobo.tgz` into the `.kobo/` folder on the device root. The `.kobo` folder may be hidden — on Windows, enable "Show hidden items" in File Explorer; on macOS, press `Cmd+Shift+.` in Finder.
-3. Copy the `NickelStorygraph` folder into the `.adds/` folder on the device root (so that you end up with `.adds/NickelStorygraph/`).
-4. Safely eject the device — it will install the plugin automatically on reconnect.
-5. Once the device restarts, reconnect via USB. Open the `.adds/NickelStorygraph/` folder, copy `config_example.ini`, rename the copy to `config.ini`, and add your StoryGraph cookies (see below).
+### Firmware 5.18 and newer (Qt 6) — Kobo and Tolino
+
+Download `Kobo.tgz` and `NickelStorygraph-adds.zip` from the [releases page](../../releases).
+
+1. Connect the device to your computer via USB.
+2. Unzip `NickelStorygraph-adds.zip` and copy the `NickelStorygraph` folder into the `.adds/` folder on the device root, so that you end up with `.adds/NickelStorygraph/`. Do this **first**: if that folder is missing when the plugin starts, it uninstalls itself.
+3. Copy `Kobo.tgz` into the `.kobo/` folder on the device root.
+4. Safely eject the device — it installs the plugin and restarts.
+
+### Firmware 4.x (Qt 5) — Kobo
+
+Download `KoboRoot.tgz` from the [releases page](../../releases). It contains the plugin and the `.adds/NickelStorygraph/` folder.
+
+1. Connect the Kobo to your computer via USB.
+2. Copy `KoboRoot.tgz` into the `.kobo/` folder on the device root.
+3. Safely eject the Kobo — it installs the plugin and restarts.
+
+If you pick the wrong download, the plugin notices at start-up: it checks the firmware and stays inactive on a firmware line it wasn't built for (see the log). Install the matching file instead.
+
+### After installing
+
+Add your StoryGraph cookies as described in [StoryGraph cookies](#storygraph-cookies).
 
 ## Uninstall
 
@@ -212,20 +226,27 @@ Go to **Settings → Save system logs**, then reconnect the device via USB. The 
 
 ## Building - Developer Info
 
-The full build runs inside a Docker container using a Qt 6.5.2 cross-compilation
-toolchain for Kobo firmware 5.18+ (the Qt 6 counterpart of
-[NickelTC](https://github.com/pgaskin/NickelTC)). It builds Qt 6.5.2 from Kobo's
-published source against Ubuntu 22.04 armhf multiarch as the sysroot — see
-`.forgejo/nickeltc/Dockerfile` and `.forgejo/nickeltc/qt6/`.
+The full build runs inside a Docker container, one toolchain per firmware line,
+selected with `QT=5` or `QT=6` (default):
+
+- **QT=6** (firmware 5.18+): a Qt 6.5.2 cross toolchain (the Qt 6 counterpart of
+  [NickelTC](https://github.com/pgaskin/NickelTC)) that builds Qt 6.5.2 from
+  Kobo's published source against Ubuntu 22.04 armhf multiarch as the sysroot —
+  see `.forgejo/nickeltc-qt6/`. Produces `hook/Kobo.tgz` and
+  `mnt/onboard/.adds/NickelStorygraph/`.
+- **QT=5** (firmware 4.x): upstream's NickelTC image (`.forgejo/nickeltc/`).
+  Produces `KoboRoot.tgz`.
 
 **Prerequisites:** Docker, [just](https://github.com/casey/just), [resvg](https://github.com/RazrFalcon/resvg)
 
 ```sh
-# First time — build the toolchain image (Qt 6.5.2; takes a while)
+# First time — build the toolchain image (Qt 6.5.2 takes a while)
 just build-tc
+QT=5 just build-tc
 
-# Build hook/Kobo.tgz and mnt/onboard/.adds/NickelStorygraph/
+# Build the package for firmware 5.18+ / 4.x
 just build-package
+QT=5 just build-package
 
 # Build and copy directly to a USB-connected Kobo (requires sudo)
 just copy-package

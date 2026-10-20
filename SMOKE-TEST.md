@@ -1,12 +1,15 @@
-# Smoke Test — NickelStorygraph Qt6 (firmware 5.18+)
+# Smoke Test — NickelStorygraph (firmware 4.x and 5.18+)
 
-Manual test checklist for verifying the Qt6 port on a real device. Work through
+Manual test checklist for verifying a build on a real device. It applies to
+both firmware lines; where they differ, the step says so (4.x = `QT=5` build,
+5.18+ = `QT=6` build). Work through
 every item in order; for any failure, capture the `logread` output (section 8)
 before continuing.
 
 ## 0. Prerequisites
 
-- [ ] A Kobo/Tolino on firmware **5.18.x** (or 6.0).
+- [ ] A device on the firmware line of the build: **4.x** (Kobo) for `QT=5`,
+      **5.18.x** or 6.0 (Kobo/Tolino) for `QT=6`.
 - [ ] Built artifacts: `hook/Kobo.tgz` and `mnt/onboard/.adds/NickelStorygraph/`
       (from `just build-package`; run `make clean` in `hook/` first if you
       build outside CI), or the two assets of a release.
@@ -14,6 +17,11 @@ before continuing.
 - [ ] StoryGraph cookies ready (`_storygraph_session`, `remember_user_token`).
 
 ## 1. Install
+
+**4.x:** copy `KoboRoot.tgz` into `.kobo/`, then safely eject — the device
+installs hook and `.adds` in one go and restarts. Continue with section 2.
+
+**5.18+:**
 
 - [ ] Connect the device via USB.
 - [ ] Copy `mnt/onboard/.adds/NickelStorygraph/` into `.adds/` **first**, so
@@ -29,7 +37,7 @@ before continuing.
       `config_example.ini` (it was not deleted).
 - [ ] No `NickelStorygraph_uninstall` file appeared (nothing self-uninstalled).
 - [ ] Nickel still boots normally (no brick, no boot loop).
-- [ ] The log (section 8) shows `firmware check: version '5.18.…' -> supported`
+- [ ] The log (section 8) shows `firmware check: version '…' -> supported`
       and no `refusing to hook` / crash lines. A plugin refused by the
       firmware check is parked as `/usr/local/Kobo/libstorygraph.so.failsafe`;
       installing a fixed `Kobo.tgz` replaces it.
@@ -45,7 +53,12 @@ before continuing.
 - [ ] Home → Currently Reading loads (no "login has expired" message), and
       `user_slug` gets cached in `config.ini`.
 
-## 4. Critical Qt6 changes — verify explicitly
+## 4. ABI switch points — verify explicitly
+
+The hook switches these on the Qt version. On 5.18+ verify the Qt6 forms below;
+on 4.x the same checks cover the Qt5 forms (`Content::getId()` without
+argument, and the two `ReadingMenuView` constructors — the menu entry must
+appear in both kinds of reading menu).
 
 ### 4a. `Content::getId(QString())` — book identification
 
