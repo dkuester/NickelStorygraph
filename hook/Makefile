@@ -13,11 +13,12 @@ override GENERATED += .version-stamp
 
 include ./NickelHook/NickelHook.mk
 
-# NH_VERSION (git describe) is baked in through CPPFLAGS, which make doesn't
-# track: after a new tag or commit, unchanged sources would keep the old
-# version string. Rewrite the stamp whenever the version changes and make every
-# object depend on it, so a version change rebuilds the hook.
+# NH_VERSION (git describe) and NH_QT_MAJOR reach the build through CPPFLAGS
+# and the toolchain choice, which make doesn't track: after a new tag, or when
+# switching between the Qt5 and Qt6 builds, unchanged sources would keep stale
+# objects. Rewrite the stamp whenever either changes and make every generated
+# file depend on it, so the hook is rebuilt.
 ifneq ($(filter-out clean gitignore,$(or $(MAKECMDGOALS),all)),)
-$(shell printf '%s\n' '$(VERSION)' | cmp -s - .version-stamp || printf '%s\n' '$(VERSION)' > .version-stamp)
+$(shell printf '%s\n' '$(VERSION) qt$(NH_QT_MAJOR)' | cmp -s - .version-stamp || printf '%s\n' '$(VERSION) qt$(NH_QT_MAJOR)' > .version-stamp)
 endif
-$(OBJECTS_C) $(OBJECTS_CXX) $(OBJECTS_CXX1): .version-stamp
+$(OBJECTS_C) $(OBJECTS_CXX) $(OBJECTS_CXX1) $(MOCS_MOC) $(OBJECTS_MOC) $(RCCS_RCC) $(OBJECTS_RCC): .version-stamp
