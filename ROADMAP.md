@@ -55,16 +55,6 @@ _None open — both quick wins shipped; see "Recently completed" above._
 
 Higher effort, highest value — the product's health and the most painful UX.
 
-### Started / finished dates
-Status changes set "started"/"finished"; StoryGraph also tracks the concrete
-dates. `update-progress-with-note` already posts
-`progress_update_date[day|month|year]`, so the field convention exists — only
-`/update-status.js` still needs verifying against the book page's own form.
-
-- **Note:** the hook knows only "now", so the feature is "date = today"; verify
-  the parameter names first.
-- **Effort:** small, but blocked on verification with a live session.
-
 ### On-device OTA update
 Update the plugin directly on the device. The install is split across two
 filesystems, so "OTA" is inherently two-phase:
@@ -86,6 +76,35 @@ filesystems, so "OTA" is inherently two-phase:
 ## Low priority (optional)
 
 Nice-to-have, not essential — safe to defer.
+
+### Started / finished dates: manual correction *(optional)*
+Clarified, but low value — deferred. StoryGraph already creates the
+"Started reading" / "Finished reading" journal entries with today's date when
+the status changes, so setting "date = today" from the device adds nothing.
+The only useful version would set the *real* date, and the Tolino doesn't
+record one: `LastTimeStartedReading`, `LastTimeFinishedReading`,
+`FirstTimeReading` and `TimesStartedReading` are empty for all 364 books on a
+5.18 Tolino, and the `Event` table holds no history (a Kobo may fill these —
+unverified). Dates can always be fixed on the website.
+
+What remains is a manual correction in the on-device journal (tap a
+started/finished entry, adjust the date with Nickel's date-up/down arrows,
+already in `files.h`). The request is known, captured from the website:
+
+- Form page: `GET /edit-journal-entry-from-book?book_id=<id>&journal_entry_id=<id>`
+  (logged in) — read `authenticity_token` from it, like the review form.
+- Save: `POST /update-journal-entry-from-book`, form-encoded:
+  `_method=patch`, `authenticity_token`, `journal_entry[day]`,
+  `journal_entry[month]`, `journal_entry[year]` (no zero padding, e.g. `7`),
+  `book_id`, `journal_entry_id`, `commit=Update`. On success it redirects to
+  `/journal?book_id=<id>`.
+- `parse_journal` would need to keep each entry's `journal_entry_id` (it
+  currently only reads the badge, date and progress).
+
+- **Why:** fixes dates when a book was linked days after starting it, or
+  finished offline and synced later.
+- **Effort:** medium (mostly the date-picker UI); verify against a real
+  session before shipping.
 
 ### Reading challenges: per-prompt tracking *(optional)*
 The challenge overview already ships: `get-goals` reads
@@ -120,9 +139,3 @@ unaffected.
 - **Effort:** small for the coexistence check (device test only); medium for
   the sqlite-based sync path.
 
-### Tolino smoke tests
-The 5.18 firmware runs on Tolinos too; installation paths and Tolino-specific
-behaviour are the least-tested path. `SMOKE-TEST.md` covers the Qt6 port but is
-Kobo-centric.
-
-- **Effort:** small–medium.
