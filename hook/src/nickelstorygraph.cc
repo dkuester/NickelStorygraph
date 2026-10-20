@@ -18,6 +18,11 @@
 
 #include <NickelHook.h>
 
+// One source tree builds for both firmware lines (NH_QT_MAJOR in hook/Makefile):
+// Qt 5.2.1 on firmware 4.x and Qt 6.5.2 on firmware 5.18+. The few libnickel
+// symbols whose ABI changed between the two are switched on this.
+#define NSG_QT6 (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+
 #include "cli.h"
 #include "files.h"
 #include "menucontroller.h"
@@ -33,7 +38,11 @@ typedef void ReadingController;
 typedef void Volume;
 typedef void Bookmark;
 static void (*ReadingController__setVolume)(ReadingController *_this, Volume *volume, Bookmark *bookmark);
+#if NSG_QT6
 static QString (*Content__getId)(Volume *_this, QString const &);
+#else
+static QString (*Content__getId)(Volume *_this);
+#endif
 static QString (*Content__getTitle)(Volume *_this);
 static QString (*Content__getAttribution)(Volume *_this);
 
@@ -114,7 +123,13 @@ MenuTextItem *construct_MenuTextItem(QWidget *parent, bool checkable, bool itali
 }
 
 typedef QWidget ReadingMenuView;
+#if NSG_QT6
 void (*ReadingMenuView__constructor)(ReadingMenuView *_this, QWidget *parent, bool unknown, bool unknown2);
+#else
+void (*ReadingMenuView__constructor)(ReadingMenuView *_this, QWidget *parent, bool unknown);
+void (*ReadingMenuView__constructor_2)(ReadingMenuView *_this, QWidget *, QByteArray const &unknownArray,
+                                       bool unknownBool);
+#endif
 
 typedef QWidget MainNavView;
 typedef QWidget MainNavButton;
@@ -196,14 +211,23 @@ static struct nh_info NickelStorygraph = (struct nh_info){.name = "NickelStorygr
 // clang-format off
 static struct nh_hook NickelStorygraphHook[] = {
   { .sym = "_ZN17ReadingController9setVolumeERK6VolumeRK8Bookmark", .sym_new = "_nh_ReadingController__setVolume",       .lib = "libnickel.so.1.0.0", .out = nh_symoutptr(ReadingController__setVolume),       .desc = "The main entry point" },
+#if NSG_QT6
   { .sym = "_ZN15ReadingMenuViewC1EP7QWidgetbb",               .sym_new = "_nh_ReadingMenuView__constructor",       .lib = "libnickel.so.1.0.0", .out = nh_symoutptr(ReadingMenuView__constructor),       .desc = "Used to inject menu items", .optional = true }, // Version 5.18+
+#else
+  { .sym = "_ZN15ReadingMenuViewC1EP7QWidgetb",                     .sym_new = "_nh_ReadingMenuView__constructor",       .lib = "libnickel.so.1.0.0", .out = nh_symoutptr(ReadingMenuView__constructor),       .desc = "Used to inject menu items", .optional = true },
+  { .sym = "_ZN15ReadingMenuViewC1EP7QWidgetRK10QByteArrayb",       .sym_new = "_nh_ReadingMenuView__constructor_2",     .lib = "libnickel.so.1.0.0", .out = nh_symoutptr(ReadingMenuView__constructor_2),     .desc = "Used to inject menu items", .optional = true }, // Version 4.44+
+#endif
   { .sym = "_ZN16SupportedLocales16supportedLocalesEb",             .sym_new = "_nh_SupportedLocales__supportedLocales", .lib = "libnickel.so.1.0.0", .out = nh_symoutptr(SupportedLocales__supportedLocales), .desc = "Add support for 'English (UK)'", .optional = true },
   { .sym = "_ZN11MainNavViewC1EP7QWidget",                         .sym_new = "_nh_MainNavView__constructor",          .lib = "libnickel.so.1.0.0", .out = nh_symoutptr(MainNavView__constructor),          .desc = "Home screen StoryGraph menu button", .optional = true },
   {0},
 };
 
 static struct nh_dlsym NickelStorygraphDlsym[] = {
+#if NSG_QT6
   { .name = "_ZNK7Content5getIdERK7QString",                                 .out = nh_symoutptr(Content__getId) },
+#else
+  { .name = "_ZNK7Content5getIdEv",                                            .out = nh_symoutptr(Content__getId) },
+#endif
   { .name = "_ZNK7Content8getTitleEv",                                         .out = nh_symoutptr(Content__getTitle) },
   { .name = "_ZNK7Content14getAttributionEv",                                  .out = nh_symoutptr(Content__getAttribution) },
 
@@ -339,11 +363,18 @@ static NmMenuHook2 nmMenuHook2 = nullptr;
 // SupportedLocales is deliberately not chained: both mods' hooks insert the
 // same "English (UK)" entry, so calling both would list it twice.
 typedef void (*HcSetVolume)(ReadingController *, Volume *, Bookmark *);
-// Qt 6 (firmware 5.18+) has a single ReadingMenuView(QWidget*, bool, bool)
-// constructor; the Qt 5 build's second QByteArray overload does not exist.
-typedef void (*HcReadingMenuViewConstructor)(ReadingMenuView *, QWidget *, bool, bool);
 static HcSetVolume hcSetVolume = nullptr;
+#if NSG_QT6
+// Qt 6 (firmware 5.18+) has a single ReadingMenuView(QWidget*, bool, bool)
+// constructor; Qt 5's second QByteArray overload does not exist there.
+typedef void (*HcReadingMenuViewConstructor)(ReadingMenuView *, QWidget *, bool, bool);
 static HcReadingMenuViewConstructor hcReadingMenuViewConstructor = nullptr;
+#else
+typedef void (*HcReadingMenuViewConstructor)(ReadingMenuView *, QWidget *, bool);
+typedef void (*HcReadingMenuViewConstructor2)(ReadingMenuView *, QWidget *, QByteArray const &, bool);
+static HcReadingMenuViewConstructor hcReadingMenuViewConstructor = nullptr;
+static HcReadingMenuViewConstructor2 hcReadingMenuViewConstructor2 = nullptr;
+#endif
 
 // The home screen tab bar button, cached so toggling "Show StoryGraph button
 // on home screen" in Settings can show/hide it immediately rather than
@@ -478,15 +509,15 @@ void showStorygraphHomeMenu(QWidget *anchor) {
   menu->popup(pos);
 }
 
-// Firmware self-check: the calloc-based widget construction (construct_TouchLabel
-// & co.) relies on the Qt6 class layout. Kobo moved to Qt6 at firmware 5.18;
-// anything older is the Qt5 ABI those constructors do not exist on, so hooking
-// is refused. Newer firmware (5.19+/6.x) is still Qt6 and expected to be
-// ABI-compatible, but the object sizes were measured against 5.18 - accept it
-// with a warning so a layout change is diagnosable instead of silently
-// corrupting the heap. Returning nonzero from init makes NickelHook restore the
-// hooks it just installed and park the plugin, so no calloc and no constructor
-// ever runs on an unsupported layout.
+// Firmware self-check: each build only runs on the firmware line it was compiled
+// for. Kobo moved Nickel to Qt6 at firmware 5.18, and the hooked constructors
+// and the calloc-based widget construction (construct_TouchLabel & co.) differ
+// between the Qt5 and Qt6 ABIs. The Qt6 build refuses anything before 5.18; the
+// Qt5 build refuses 5.18 and later. Firmware beyond what a build was measured
+// on (Qt6: 5.19+/6.x, Qt5: 5.0-5.17) is accepted with a warning so a layout
+// change is diagnosable instead of silently corrupting the heap. Returning
+// nonzero from init makes NickelHook restore the hooks it just installed and
+// park the plugin, so no calloc and no constructor ever runs on the wrong ABI.
 //
 // The version is read from /mnt/onboard/.kobo/version rather than the exported
 // N3SettingsDeviceInformationController::viewFirmwareVersion symbol: a plain
@@ -496,16 +527,16 @@ void showStorygraphHomeMenu(QWidget *anchor) {
 // is the third field; the kernel field also looks like "x.y.z", so the field
 // is picked by position, not by shape. A line without commas is taken whole.
 typedef enum {
-  FW_TOO_OLD,    // Qt5 (4.x / 5.0-5.17): the constructors do not exist here.
-  FW_SUPPORTED,  // exactly 5.18, the layout the object sizes were measured on.
-  FW_UNVERIFIED, // newer (5.19+/6.x): still Qt6, accepted with a warning.
+  FW_INCOMPATIBLE, // the other Qt ABI, or an unreadable version: refuse.
+  FW_SUPPORTED,    // the firmware line this build was tested on.
+  FW_UNVERIFIED,   // same Qt ABI, but not tested: accepted with a warning.
 } FirmwareVerdict;
 
 static FirmwareVerdict firmwareVerdict() {
   FILE *f = fopen("/mnt/onboard/.kobo/version", "r");
   if (!f) {
     nh_log("firmware check: could not read /mnt/onboard/.kobo/version");
-    return FW_TOO_OLD;
+    return FW_INCOMPATIBLE;
   }
 
   char line[256] = {0};
@@ -514,7 +545,7 @@ static FirmwareVerdict firmwareVerdict() {
 
   if (!read) {
     nh_log("firmware check: /mnt/onboard/.kobo/version is empty");
-    return FW_TOO_OLD;
+    return FW_INCOMPATIBLE;
   }
 
   // Trim trailing newline/whitespace.
@@ -532,7 +563,7 @@ static FirmwareVerdict firmwareVerdict() {
     }
     if (!buf) {
       nh_log("firmware check: unrecognized version line '%s' - refusing to hook", line);
-      return FW_TOO_OLD;
+      return FW_INCOMPATIBLE;
     }
     if (char *comma = strchr(buf, ','))
       *comma = '\0';
@@ -542,12 +573,14 @@ static FirmwareVerdict firmwareVerdict() {
   int minor = 0;
   if (sscanf(buf, "%d.%d", &major, &minor) < 2) {
     nh_log("firmware check: unrecognized version '%s' - refusing to hook", buf);
-    return FW_TOO_OLD;
+    return FW_INCOMPATIBLE;
   }
 
-  if (major < 5 || (major == 5 && minor < 18)) {
-    nh_log("firmware check: version '%s' is pre-5.18 (Qt5) - refusing to hook", buf);
-    return FW_TOO_OLD;
+  bool qt6Firmware = major > 5 || (major == 5 && minor >= 18);
+#if NSG_QT6
+  if (!qt6Firmware) {
+    nh_log("firmware check: version '%s' is pre-5.18 (Qt5) - refusing to hook; this is the 5.18+ build", buf);
+    return FW_INCOMPATIBLE;
   }
   if (major == 5 && minor == 18) {
     nh_log("firmware check: version '%s' -> supported", buf);
@@ -555,11 +588,23 @@ static FirmwareVerdict firmwareVerdict() {
   }
   nh_log("firmware check: version '%s' is newer than 5.18 - hooking, but the object sizes are unverified for this layout", buf);
   return FW_UNVERIFIED;
+#else
+  if (qt6Firmware) {
+    nh_log("firmware check: version '%s' is 5.18+ (Qt6) - refusing to hook; this is the 4.x build", buf);
+    return FW_INCOMPATIBLE;
+  }
+  if (major == 4) {
+    nh_log("firmware check: version '%s' -> supported", buf);
+    return FW_SUPPORTED;
+  }
+  nh_log("firmware check: version '%s' is not 4.x - hooking, but this build is untested on it", buf);
+  return FW_UNVERIFIED;
+#endif
 }
 
 int nickelstorygraph_init() {
-  if (firmwareVerdict() == FW_TOO_OLD) {
-    nh_log("nickelstorygraph_init: firmware is below 5.18 (Qt5) - refusing to hook (calloc sizes are Qt6-specific)");
+  if (firmwareVerdict() == FW_INCOMPATIBLE) {
+    nh_log("nickelstorygraph_init: firmware doesn't match this build's Qt ABI - refusing to hook");
     return 1;
   }
 
@@ -576,6 +621,10 @@ int nickelstorygraph_init() {
     hcSetVolume = reinterpret_cast<HcSetVolume>(dlsym(hcHandle, "_nh_ReadingController__setVolume"));
     hcReadingMenuViewConstructor =
         reinterpret_cast<HcReadingMenuViewConstructor>(dlsym(hcHandle, "_nh_ReadingMenuView__constructor"));
+#if !NSG_QT6
+    hcReadingMenuViewConstructor2 =
+        reinterpret_cast<HcReadingMenuViewConstructor2>(dlsym(hcHandle, "_nh_ReadingMenuView__constructor_2"));
+#endif
     dlclose(hcHandle);
   }
   nh_log("nickelstorygraph_init: hcSetVolume=%p hcReadingMenuViewConstructor=%p", (void *)hcSetVolume,
@@ -596,7 +645,11 @@ _nh_ReadingController__setVolume(ReadingController *_this, Volume *volume, Bookm
   nh_log("ReadingController::setVolume(%p, %p, %p)", _this, volume, bookmark);
 
   SyncController *syncController = SyncController::getInstance();
+#if NSG_QT6
   syncController->contentId = Content__getId(volume, QString());
+#else
+  syncController->contentId = Content__getId(volume);
+#endif
   syncController->title = Content__getTitle(volume);
   syncController->author = Content__getAttribution(volume);
 
@@ -649,6 +702,7 @@ void injectMenuWidget(ReadingMenuView *parent) {
   }
 }
 
+#if NSG_QT6
 extern "C" __attribute__((visibility("default"))) void
 _nh_ReadingMenuView__constructor(ReadingMenuView *_this, QWidget *parent, bool unknown, bool unknown2) {
   nh_log("ReadingMenuView::ReadingMenuView(%p, %p, %s, %s)", _this, parent, unknown ? "true" : "false",
@@ -661,6 +715,32 @@ _nh_ReadingMenuView__constructor(ReadingMenuView *_this, QWidget *parent, bool u
   injectMenuWidget(parent);
   nh_log("ReadingMenuView::ReadingMenuView inject done");
 }
+
+#else
+extern "C" __attribute__((visibility("default"))) void _nh_ReadingMenuView__constructor(ReadingMenuView *_this,
+                                                                                        QWidget *parent, bool unknown) {
+  nh_log("ReadingMenuView::ReadingMenuView(%p, %p, %s)", _this, parent, unknown ? "true" : "false");
+  if (hcReadingMenuViewConstructor)
+    hcReadingMenuViewConstructor(_this, parent, unknown);
+  else
+    ReadingMenuView__constructor(_this, parent, unknown);
+  nh_log("ReadingMenuView::ReadingMenuView original returned, injecting");
+  injectMenuWidget(parent);
+  nh_log("ReadingMenuView::ReadingMenuView inject done");
+}
+
+extern "C" __attribute__((visibility("default"))) void
+_nh_ReadingMenuView__constructor_2(ReadingMenuView *_this, QWidget *parent, QByteArray const &unknownArray,
+                                   bool unknownBool) {
+  nh_log("ReadingMenuView::ReadingMenuView(%p, %p, %s)", _this, parent, unknownBool ? "true" : "false");
+  if (hcReadingMenuViewConstructor2)
+    hcReadingMenuViewConstructor2(_this, parent, unknownArray, unknownBool);
+  else
+    ReadingMenuView__constructor_2(_this, parent, unknownArray, unknownBool);
+  injectMenuWidget(parent);
+}
+
+#endif
 
 extern "C" __attribute__((visibility("default"))) void
 _nh_MainNavView__constructor(MainNavView *_this, QWidget *parent) {
