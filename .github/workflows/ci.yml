@@ -1,5 +1,6 @@
 # GitHub counterpart of .forgejo/workflows: static checks on the host, then the
-# full cross build inside the toolchain image published by toolchain.yml.
+# full cross build for both firmware lines inside the toolchain images published
+# by toolchain.yml (5.18+: Qt 6, 4.x: Qt 5 / NickelTC).
 name: CI
 
 on:
@@ -61,14 +62,52 @@ jobs:
           path: |
             /cargo/registry
             cli/target
-          key: cross-${{ hashFiles('cli/Cargo.lock') }}
-          restore-keys: cross-
+          key: cross-qt6-${{ hashFiles('cli/Cargo.lock') }}
+          restore-keys: cross-qt6-
+      - run: just build package
+        env:
+          QT: "6"
+      - run: just test
+        env:
+          QT: "6"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NickelStorygraph-5.18-${{ github.sha }}
+          path: |
+            hook/Kobo.tgz
+            mnt/onboard/.adds/NickelStorygraph/
+          if-no-files-found: error
+
+  # Firmware 4.x (Qt 5.2.1, NickelTC). A separate job rather than a matrix so
+  # the required 5.18+ check above keeps its name.
+  build-qt5:
+    name: Cross build + package (4.x)
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/nickelstorygraph-toolchain-qt5:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      QT: "5"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /cargo/registry
+            cli/target
+          key: cross-qt5-${{ hashFiles('cli/Cargo.lock') }}
+          restore-keys: cross-qt5-
       - run: just build package
       - run: just test
       - uses: actions/upload-artifact@v4
         with:
-          name: NickelStorygraph-${{ github.sha }}
-          path: |
-            hook/Kobo.tgz
-            mnt/onboard/.adds/NickelStorygraph/
+          name: NickelStorygraph-4.x-${{ github.sha }}
+          path: KoboRoot.tgz
           if-no-files-found: error
