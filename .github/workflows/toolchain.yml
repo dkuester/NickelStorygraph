@@ -1,8 +1,10 @@
-# Builds the Qt 6.5.2 Kobo cross toolchain (.forgejo/nickeltc) and publishes
-# it to GHCR, so the CI build job can pull it instead of compiling Qt on every
-# run. Runs only when the toolchain definition changes, or by hand.
+# Builds the cross toolchains and publishes them to GHCR, so the CI build jobs
+# can pull them instead of compiling a toolchain on every run:
+#   qt5 — firmware 4.x: NickelTC (Qt 5.2.1) from .forgejo/nickeltc, as upstream
+#   qt6 — firmware 5.18+: Qt 6.5.2 from .forgejo/nickeltc-qt6
+# Runs only when a toolchain definition changes, or by hand.
 #
-# Any branch that touches the toolchain republishes :latest. That keeps a
+# Any branch that touches a toolchain republishes its :latest. That keeps a
 # toolchain change testable in its own PR; it also means an unmerged toolchain
 # branch can replace the image main builds with, so merge or revert promptly.
 name: Toolchain image
@@ -11,6 +13,7 @@ on:
   push:
     paths:
       - ".forgejo/nickeltc/**"
+      - ".forgejo/nickeltc-qt6/**"
       - ".github/workflows/toolchain.yml"
   workflow_dispatch:
 
@@ -22,13 +25,25 @@ concurrency:
   group: toolchain
   cancel-in-progress: false
 
-env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/nickelstorygraph-toolchain
-
 jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - qt: "5"
+            context: .forgejo/nickeltc
+            image: nickelstorygraph-toolchain-qt5
+            description: Kobo firmware 4.x cross toolchain (NickelTC, Qt 5.2.1, Rust, just, resvg)
+          - qt: "6"
+            context: .forgejo/nickeltc-qt6
+            image: nickelstorygraph-toolchain
+            description: Kobo/Tolino firmware 5.18+ cross toolchain (Qt 6.5.2, Rust, just, resvg)
+    name: image (Qt ${{ matrix.qt }})
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,15 +57,15 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: .forgejo/nickeltc
+          context: ${{ matrix.context }}
           push: true
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
-          # Links the package to this repository, which lets the CI job pull
+          # Links the package to this repository, which lets the CI jobs pull
           # it with the repository's GITHUB_TOKEN.
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=Kobo/Tolino firmware 5.18+ cross toolchain (Qt 6.5.2, Rust, just, resvg)
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            org.opencontainers.image.description=${{ matrix.description }}
+          cache-from: type=gha,scope=qt${{ matrix.qt }}
+          cache-to: type=gha,mode=max,scope=qt${{ matrix.qt }}
