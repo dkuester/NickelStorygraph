@@ -8,16 +8,18 @@ before continuing.
 
 - [ ] A Kobo/Tolino on firmware **5.18.x** (or 6.0).
 - [ ] Built artifacts: `hook/Kobo.tgz` and `mnt/onboard/.adds/NickelStorygraph/`
-      (from `just build-package`).
+      (from `just build-package`; run `make clean` in `hook/` first if you
+      build outside CI), or the two assets of a release.
 - [ ] A backup of `.kobo/` and `.adds/` (or a recent full-device backup).
-- [ ] StoryGraph session cookies ready for `config.ini`.
+- [ ] StoryGraph cookies ready (`_storygraph_session`, `remember_user_token`).
 
 ## 1. Install
 
 - [ ] Connect the device via USB.
-- [ ] Copy `hook/Kobo.tgz` into the device root's `.kobo/` folder.
-- [ ] Copy `mnt/onboard/.adds/NickelStorygraph/` into `.adds/`, so that you get
-      `.adds/NickelStorygraph/`.
+- [ ] Copy `mnt/onboard/.adds/NickelStorygraph/` into `.adds/` **first**, so
+      that you get `.adds/NickelStorygraph/`. If that folder is missing when the
+      plugin starts, it uninstalls itself.
+- [ ] Then copy `hook/Kobo.tgz` into the device root's `.kobo/` folder.
 - [ ] Safely eject — the device installs the plugin and restarts.
 
 ## 2. First boot — plugin loads (NickelHook Failsafe)
@@ -27,16 +29,21 @@ before continuing.
       `config_example.ini` (it was not deleted).
 - [ ] No `NickelStorygraph_uninstall` file appeared (nothing self-uninstalled).
 - [ ] Nickel still boots normally (no brick, no boot loop).
-- [ ] `logread | grep -i storygraph` shows plugin `nh_log` lines and no
-      `nh_failsafe` / crash lines.
+- [ ] The log (section 8) shows `firmware check: version '5.18.…' -> supported`
+      and no `refusing to hook` / crash lines. A plugin refused by the
+      firmware check is parked as `/usr/local/Kobo/libstorygraph.so.failsafe`;
+      installing a fixed `Kobo.tgz` replaces it.
 
 ## 3. Configuration
 
-- [ ] Copy `config_example.ini` to `config.ini` (same folder).
-- [ ] Fill in `session_cookie` and `remember_user_token` (browser DevTools →
-      Application → Cookies → app.thestorygraph.com).
-- [ ] (Optional) set `user_slug`.
-- [ ] Safely eject; confirm the config parses (no config error in the log).
+- [ ] Settings → **Import cookies** without a `cookies.ini` shows
+      "No cookies file found".
+- [ ] Create `.adds/NickelStorygraph/cookies.ini` with `session_cookie=…` and
+      `remember_user_token=…` lines (never `.txt`, see section 9), eject, then
+      **Import cookies** again: success message, `cookies.ini` is gone, and
+      `config.ini` holds both values.
+- [ ] Home → Currently Reading loads (no "login has expired" message), and
+      `user_slug` gets cached in `config.ini`.
 
 ## 4. Critical Qt6 changes — verify explicitly
 
@@ -72,9 +79,23 @@ The Qt6 ABI change merged the two ReadingMenuView constructors into one
 - [ ] A highlight or note syncs as a journal entry (if `sync_bookmarks` on).
 - [ ] Manual sync from the menu works.
 
+### Linking
+- [ ] Manually link book: covers, page count and series show; paging to
+      pages 2 and 3 works (search for something common).
+- [ ] A title with a series in parentheses is prefilled without it.
+- [ ] A shop book (no ISBN in the database) auto-links; the CLI log shows
+      `ISBN from cover URL …`.
+
+### Book status
+- [ ] **Private: No/Yes** toggles, matches the website, and shows the
+      eye-slash icon in Currently Reading.
+- [ ] Setting **Read** asks for a review exactly once.
+
 ### Other UI
-- [ ] Journal, reviews, search, editions and settings dialogs all open without
-      crashing.
+- [ ] Journal, reviews, goals, feed, editions and settings dialogs all open
+      without crashing; Currently Reading pages 4 books per tab; long feed
+      titles wrap.
+- [ ] Home menu → update check reports the installed version.
 
 ## 6. NickelMenu coexistence
 
@@ -89,11 +110,29 @@ The Qt6 ABI change merged the two ReadingMenuView constructors into one
 
 ## 8. Collecting logs for a bug report
 
-```sh
-# over SSH (devmode) or telnet on the device:
-logread | grep -iE 'storygraph|nh\.' > /tmp/storygraph.log
-# copy /tmp/storygraph.log off the device
-```
+- Settings → **Save system logs** writes `NickelStorygraph_<date>_<time>.log`
+  into the root of the device storage. It is a `logread` snapshot, so boot
+  lines (the firmware check) are only in it if you save it soon after a
+  restart.
+- The CLI keeps `.adds/NickelStorygraph/nickelstorygraph.log` (every call with
+  `debug = true`, errors always).
+- With SSH/telnet (devmode on Kobo): `logread | grep -iE 'storygraph|nh\.'`.
 
-Include the firmware version and the exact step that failed together with
-`/tmp/storygraph.log`.
+Remove cookie values before sharing a log. Include the firmware version and
+the exact step that failed.
+
+## 9. Tolino notes
+
+Found on a Tolino with firmware 5.18.264769:
+
+- `.kobo/version` is one comma-separated line, `serial,kernel,firmware,…`
+  (`T303440090606,4.9.77,5.18.264769,…`); the firmware is the third field.
+- The firmware converts every `.txt` file on the device into an EPUB and adds
+  it to the library. Never put secrets into a `.txt` (hence `cookies.ini`), and
+  watch out for Windows saving `cookies.ini.txt`.
+- Shop books leave the database `ISBN` column empty; the plugin reads the ISBN
+  from the shop's `pageplace.de` cover URL instead.
+- If the device shows "connected via USB" but macOS sees no drive at all (not
+  even in `diskutil list`), restart the Tolino (hold power ~10 s) and
+  reconnect.
+- There is no SSH; use **Save system logs** (section 8).
