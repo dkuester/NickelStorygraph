@@ -40,6 +40,7 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] "Log in" row removed from Settings: email/password login always fails behind Cloudflare's bot check; the dialog code stays for when that changes
 - [x] Shop books link again: the Tolino shop leaves Nickel's `ISBN` column empty (0 of 362 shop books in a real library), and a missing ISBN aborted auto-link before the title search. The ISBN is now read from the shop's cover URL (`…/9781068563119_A62207078/cover`, 350 of 362 with a valid check digit), with the title search as fallback (found in the Tolino device test)
 - [x] The in-book "Manually link book" entry also uses the bracket-free search text (missed in the first fix)
+- [x] Upstream sync (Oct 2026): private books, paused-audiobook progress, fixed 4-book paging in Currently Reading, wrapped feed titles, the `nickelstoregraph` → `nickelstorygraph` rename (the CLI log is now `nickelstorygraph.log`) and NickelHardcover coexistence, the last adapted to the single Qt 6 `ReadingMenuView` constructor. NickelHardcover itself doesn't support firmware 5.x yet, so that path is untested on device
 
 ## Quick wins
 
