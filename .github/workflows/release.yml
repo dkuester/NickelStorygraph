@@ -1,0 +1,72 @@
+# Publishes a pre-release for every pushed v* tag: builds in the toolchain
+# image, runs the same checks as CI, and attaches Kobo.tgz plus the .adds zip.
+# The release text comes from .github/release-notes/<tag>.md, which has to be
+# merged to main before the tag is pushed (see .github/release-notes/README.md).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/nickelstorygraph-toolchain:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          # git describe derives the version from the tag.
+          fetch-depth: 0
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Check tag and release notes
+        id: notes
+        run: |
+          notes=".github/release-notes/$TAG.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::Missing $notes - merge the release notes to main before tagging."
+            exit 1
+          fi
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $TAG is not on main."
+            exit 1
+          fi
+          if [ "$(git describe --tags)" != "$TAG" ]; then
+            echo "::error::git describe gives $(git describe --tags), not $TAG."
+            exit 1
+          fi
+          # Release title: the notes' first heading without the leading #s.
+          title="$(sed -n '1s/^#* *//p' "$notes")"
+          echo "path=$notes" >> "$GITHUB_OUTPUT"
+          echo "title=${title:-$TAG}" >> "$GITHUB_OUTPUT"
+
+      - run: just lint build package
+      - run: just test
+
+      - name: Package the .adds payload
+        run: |
+          cd mnt/onboard/.adds
+          zip -q -X -r "$GITHUB_WORKSPACE/NickelStorygraph-adds.zip" NickelStorygraph
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.notes.outputs.title }}
+          body_path: ${{ steps.notes.outputs.path }}
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            hook/Kobo.tgz
+            NickelStorygraph-adds.zip

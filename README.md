@@ -233,6 +233,8 @@ just copy-package
 
 Before deploying to a device, work through the [smoke-test checklist](SMOKE-TEST.md) — it covers the two Qt6 ABI changes that need on-device verification.
 
+Releases are built by CI: merge `.github/release-notes/vX.Y.Z.md` to `main`, then push the tag `vX.Y.Z`. See [.github/release-notes/README.md](.github/release-notes/README.md).
+
 Other useful commands:
 
 | Command | Description |
