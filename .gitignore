@@ -37,3 +37,6 @@ mnt/
 cookies.ini
 cookies.txt
 /.adds/
+
+# Hook build: version stamp that forces a rebuild on a new git describe
+hook/.version-stamp
