@@ -106,14 +106,18 @@ already in `files.h`). The request is known, captured from the website:
 - **Effort:** medium (mostly the date-picker UI); verify against a real
   session before shipping.
 
-### Reading challenges: per-prompt tracking *(optional)*
+### Reading challenges: per-prompt tracking *(optional, needs official API)*
 The challenge overview already ships: `get-goals` reads
 `/reading_challenges/dashboard/<slug>` and the Goals dialog renders it. What is
 left is per-prompt tracking (which books fulfil which prompts).
 
 - **Why:** the page is authenticated and scrapable, and the slug is cached.
 - **Scope:** per-prompt tracking only — do not rebuild the overview.
-- **Effort:** medium.
+- **Blocker:** wait for an official StoryGraph API. Per-prompt tracking would
+  scrape a deep, frequently changing part of the site, and a breakage would
+  stay silent; that fragility isn't worth it for an optional feature. Pick
+  this up only once StoryGraph publishes an API that exposes challenges.
+- **Effort:** medium, once the API exists.
 
 ### Kobalt compatibility *(optional)*
 [Kobalt](https://github.com/nicoverbruggen/kobalt) is an alternative EPUB
