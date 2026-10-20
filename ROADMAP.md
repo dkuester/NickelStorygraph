@@ -41,6 +41,9 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] Shop books link again: the Tolino shop leaves Nickel's `ISBN` column empty (0 of 362 shop books in a real library), and a missing ISBN aborted auto-link before the title search. The ISBN is now read from the shop's cover URL (`…/9781068563119_A62207078/cover`, 350 of 362 with a valid check digit), with the title search as fallback (found in the Tolino device test)
 - [x] The in-book "Manually link book" entry also uses the bracket-free search text (missed in the first fix)
 - [x] Upstream sync (Oct 2026): private books, paused-audiobook progress, fixed 4-book paging in Currently Reading, wrapped feed titles, the `nickelstoregraph` → `nickelstorygraph` rename (the CLI log is now `nickelstorygraph.log`) and NickelHardcover coexistence, the last adapted to the single Qt 6 `ReadingMenuView` constructor. NickelHardcover itself doesn't support firmware 5.x yet, so that path is untested on device
+- [x] Release workflow: a pushed `v*` tag builds and tests in the toolchain image and publishes the pre-release with `Kobo.tgz` and the `.adds` zip; notes live in `.github/release-notes/<tag>.md`
+- [x] Hook rebuilds when `git describe` changes (version stamp), so a local build never ships a stale version string
+- [x] `SMOKE-TEST.md` covers the Tolino: `.kobo/version` format, `.txt`→EPUB conversion, shop-book ISBNs, log locations, USB hang
 
 ## Quick wins
 
