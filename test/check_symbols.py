@@ -2,7 +2,7 @@
 """Symbol regression test for the NickelStorygraph hook.
 
 Every libnickel symbol referenced by the hook (the `nh_hook` `.sym = "..."` and
-`nh_dlsym` `.name = "..."` entries in `nickelstoregraph.cc`) must exist in the
+`nh_dlsym` `.name = "..."` entries in `nickelstorygraph.cc`) must exist in the
 target firmware's exported symbol table. If a future firmware renames or removes
 a symbol, or a symbol in the source is mistyped, this test fails.
 
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-HOOK_SRC = REPO / "hook" / "src" / "nickelstoregraph.cc"
+HOOK_SRC = REPO / "hook" / "src" / "nickelstorygraph.cc"
 REF = Path(__file__).resolve().parent / "libnickel-5.18.syms.gz"
 
 # `.sym = "..."` (nh_hook) and `.name = "..."` (nh_dlsym). The `\s*` after the

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../nickelstoregraph.h"
+#include "../nickelstorygraph.h"
 #include "../widgets/dialog.h"
 
 class LoginDialog : public Dialog {

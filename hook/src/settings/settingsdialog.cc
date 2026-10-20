@@ -4,7 +4,7 @@
 #include <NickelHook.h>
 
 #include "../cli.h"
-#include "../nickelstoregraph.h"
+#include "../nickelstorygraph.h"
 #include "../settings.h"
 #include "../synccontroller.h"
 #include "../widgets/label.h"

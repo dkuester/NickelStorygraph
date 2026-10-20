@@ -84,6 +84,7 @@ enum MenuOption {
   JOURNAL,
   REVIEW,
   SETTINGS,
+  TOGGLE_PRIVATE,
 };
 
 void MenuController::showMainMenu() {
@@ -118,12 +119,14 @@ void MenuController::showMainMenu() {
 
 void MenuController::showStatusMenu(QJsonObject doc) {
   int status = doc.value("status_id").toInt(0);
-  nh_log("MenuController::showStatusMenu(%d)", status);
+  bool isPrivate = doc.value("is_private").toBool(false);
+  nh_log("MenuController::showStatusMenu(%d, private=%d)", status, isPrivate);
 
   QString contentId = SyncController::getInstance()->contentId;
   if (status > 0) {
     Settings::getInstance()->setStatus(contentId, status);
   }
+  currentPrivate = isPrivate;
 
   setSelected(true);
 
@@ -135,6 +138,8 @@ void MenuController::showStatusMenu(QJsonObject doc) {
           {t("Paused"), MenuOption::PAUSED, status == MenuOption::PAUSED},
           {t("Read"), MenuOption::READ, status == MenuOption::READ},
           {t("Did Not Finish"), MenuOption::DID_NOT_FINISH, status == MenuOption::DID_NOT_FINISH},
+          // Privacy is a per-book flag; tapping toggles it and keeps the status.
+          {isPrivate ? t("Private: Yes") : t("Private: No"), MenuOption::TOGGLE_PRIVATE, false},
       },
       icon, 6, true);
   NickelTouchMenu__showDecoration(menu, true);
@@ -146,6 +151,40 @@ void MenuController::showStatusMenu(QJsonObject doc) {
   if (check) {
     check->setPixmap(QPixmap(Files::arrow_left));
   }
+}
+
+void MenuController::togglePrivate() {
+  CLI *cli = CLI::setPrivacy(!currentPrivate);
+  QObject::connect(cli, &CLI::response, this, &MenuController::showStatusMenu);
+}
+
+void MenuController::setStatus(int status) {
+  // StoryGraph keeps a book's privacy when its status changes.
+  CLI *cli = CLI::setUserBook(status);
+
+  if (status != MenuOption::READ) {
+    QObject::connect(cli, &CLI::response, this, &MenuController::showStatusMenu);
+    return;
+  }
+
+  QObject::connect(cli, &CLI::response, this, [this](QJsonObject doc) {
+    int status = doc.value("status_id").toInt(0);
+    if (status > 0)
+      Settings::getInstance()->setStatus(SyncController::getInstance()->contentId, status);
+
+    ConfirmationDialog *prompt = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
+    ConfirmationDialog__setTitle(prompt, t("Book complete!"));
+    ConfirmationDialog__setText(prompt, t("Would you like to write a review?"));
+    ConfirmationDialog__setAcceptButtonText(prompt, t("Yes"));
+    ConfirmationDialog__setRejectButtonText(prompt, t("No"));
+    ConfirmationDialog__showCloseButton(prompt, false);
+    QObject::connect(prompt, &QDialog::accepted, prompt, [prompt]() {
+      ReviewDialog::show();
+      prompt->deleteLater();
+    });
+    QObject::connect(prompt, &QDialog::rejected, prompt, &QDialog::deleteLater);
+    prompt->open();
+  });
 }
 
 void MenuController::showBookManagementMenu() {
@@ -187,34 +226,14 @@ void MenuController::triggered(QAction *action) {
   case MenuOption::WANT_TO_READ:
   case MenuOption::CURRENTLY_READING:
   case MenuOption::PAUSED:
-  case MenuOption::DID_NOT_FINISH: {
-    CLI *cli = CLI::setUserBook(value);
-    QObject::connect(cli, &CLI::response, this, &MenuController::showStatusMenu);
+  case MenuOption::READ:
+  case MenuOption::DID_NOT_FINISH:
+    setStatus(value);
     break;
-  }
 
-  case MenuOption::READ: {
-    CLI *cli = CLI::setUserBook(value);
-    QObject::connect(cli, &CLI::response, this, [this](QJsonObject doc) {
-      int status = doc.value("status_id").toInt(0);
-      if (status > 0)
-        Settings::getInstance()->setStatus(SyncController::getInstance()->contentId, status);
-
-      ConfirmationDialog *prompt = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
-      ConfirmationDialog__setTitle(prompt, t("Book complete!"));
-      ConfirmationDialog__setText(prompt, t("Would you like to write a review?"));
-      ConfirmationDialog__setAcceptButtonText(prompt, t("Yes"));
-      ConfirmationDialog__setRejectButtonText(prompt, t("No"));
-      ConfirmationDialog__showCloseButton(prompt, false);
-      QObject::connect(prompt, &QDialog::accepted, prompt, [prompt]() {
-        ReviewDialog::show();
-        prompt->deleteLater();
-      });
-      QObject::connect(prompt, &QDialog::rejected, prompt, &QDialog::deleteLater);
-      prompt->open();
-    });
+  case MenuOption::TOGGLE_PRIVATE:
+    togglePrivate();
     break;
-  }
 
   case MenuOption::SYNC_NOW:
     SyncController::getInstance()->manualSync();

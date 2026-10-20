@@ -386,7 +386,7 @@ QString scaledNavIconPath() {
   nh_log("scaledNavIconPath: scaled master to match native icon (%dx%d): %dx%d", reference.width(),
          reference.height(), scaled.width(), scaled.height());
 
-  QString tempOut = QStringLiteral("/tmp/nickelstoregraph_nav_icon.png");
+  QString tempOut = QStringLiteral("/tmp/nickelstorygraph_nav_icon.png");
   if (!scaled.save(tempOut, "PNG")) {
     nh_log("scaledNavIconPath: could not save scaled icon to %s", qPrintable(tempOut));
     return QString();
@@ -557,9 +557,9 @@ static FirmwareVerdict firmwareVerdict() {
   return FW_UNVERIFIED;
 }
 
-int nickelstoregraph_init() {
+int nickelstorygraph_init() {
   if (firmwareVerdict() == FW_TOO_OLD) {
-    nh_log("nickelstoregraph_init: firmware is below 5.18 (Qt5) - refusing to hook (calloc sizes are Qt6-specific)");
+    nh_log("nickelstorygraph_init: firmware is below 5.18 (Qt5) - refusing to hook (calloc sizes are Qt6-specific)");
     return 1;
   }
 
@@ -569,7 +569,7 @@ int nickelstoregraph_init() {
     dlclose(nmHandle);
   }
   nickelMenuDetected = nmMenuHook2 != nullptr;
-  nh_log("nickelstoregraph_init: nickelMenuDetected=%s", nickelMenuDetected ? "true" : "false");
+  nh_log("nickelstorygraph_init: nickelMenuDetected=%s", nickelMenuDetected ? "true" : "false");
 
   void *hcHandle = dlopen("/usr/local/Kobo/imageformats/libhardcover.so", RTLD_NOLOAD | RTLD_LAZY);
   if (hcHandle) {
@@ -578,13 +578,13 @@ int nickelstoregraph_init() {
         reinterpret_cast<HcReadingMenuViewConstructor>(dlsym(hcHandle, "_nh_ReadingMenuView__constructor"));
     dlclose(hcHandle);
   }
-  nh_log("nickelstoregraph_init: hcSetVolume=%p hcReadingMenuViewConstructor=%p", (void *)hcSetVolume,
+  nh_log("nickelstorygraph_init: hcSetVolume=%p hcReadingMenuViewConstructor=%p", (void *)hcSetVolume,
          (void *)hcReadingMenuViewConstructor);
 
   return 0;
 }
 
-NickelHook(.init = &nickelstoregraph_init, .info = &NickelStorygraph, .hook = NickelStorygraphHook,
+NickelHook(.init = &nickelstorygraph_init, .info = &NickelStorygraph, .hook = NickelStorygraphHook,
            .dlsym = NickelStorygraphDlsym, .uninstall = &hardcover_uninstall);
 
 QStackedWidget *stackedWidget = nullptr;

@@ -76,6 +76,7 @@ pub struct JournalActivity {
 pub struct UserBook {
   pub book_id: String,
   pub status_id: Option<u8>,
+  pub is_private: bool,
   pub progress_percent: u32,
   pub progress_pages: u32,
   pub book_pages: u32,
@@ -416,15 +417,6 @@ fn percent_from_style(style: &str) -> Option<u32> {
     .map(|f| f.round() as u32)
 }
 
-/// Extracts the progress percentage from the `edit-progress` progress bar's
-/// inline `width` style. StoryGraph renders this bar for both page- and
-/// time-tracked books, unlike the hidden percent input which only exists for
-/// page-tracked books.
-fn progress_percent_from_edit_progress(html: &str) -> Option<u32> {
-  let i = html.find("edit-progress")?;
-  percent_from_style(&html[i..])
-}
-
 /// StoryGraph's internal reading-status IDs (stable across the site).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -493,6 +485,56 @@ fn status_to_str(status_id: u8) -> &'static str {
   ReadingStatus::from_id(status_id)
     .map(ReadingStatus::as_str)
     .unwrap_or("currently-reading")
+}
+
+/// The book page's privacy toggle: a `button.js-book-private-toggle` inside a
+/// form posting to `/toggle-book-privacy.js?book_id=…&private=true|false`.
+/// Its title is "Make this book private" on a public book and "Make this book
+/// public again" on a private one.
+struct PrivacyToggle {
+  is_private: bool,
+  action: String,
+  fields: Vec<(String, String)>,
+}
+
+fn privacy_toggle(doc: &Html) -> Option<PrivacyToggle> {
+  let btn_sel = Selector::parse("button.js-book-private-toggle").expect("valid selector");
+  let input_sel = Selector::parse("input[name]").expect("valid selector");
+
+  let button = doc.select(&btn_sel).next()?;
+  let is_private = button
+    .value()
+    .attr("title")
+    .unwrap_or("")
+    .to_lowercase()
+    .contains("public");
+
+  let form = button
+    .ancestors()
+    .filter_map(scraper::ElementRef::wrap)
+    .find(|e| e.value().name() == "form");
+  let action = form
+    .and_then(|f| f.value().attr("action"))
+    .unwrap_or("")
+    .to_owned();
+  let fields = form
+    .map(|f| {
+      f.select(&input_sel)
+        .map(|i| {
+          (
+            i.value().attr("name").unwrap_or("").to_owned(),
+            i.value().attr("value").unwrap_or("").to_owned(),
+          )
+        })
+        .collect()
+    })
+    .unwrap_or_default();
+
+  Some(PrivacyToggle {
+    is_private,
+    action,
+    fields,
+  })
 }
 
 /// Fetch /books/:slug and extract mutable form state needed for POST calls.
@@ -748,6 +790,7 @@ pub struct ReadingBook {
   pub year: u32,
   pub status: String,            // "reading" or "paused"
   pub cover_url: Option<String>, // absolute URL or None
+  pub is_private: bool,
 }
 
 /// A single item in the community activity feed.
@@ -922,12 +965,79 @@ pub fn get_feed() -> Result<Vec<FeedItem>> {
   Ok(items)
 }
 
+/// Reads the percentage from the rendered progress bar's inline `width: N%`.
+/// This is the only progress source for audiobooks (tracked by time, no hidden
+/// percent input). StoryGraph renders the bar in two ways:
+///   `.progress-bar > div[style="width: 45%"]` (e.g. paused books), and
+///   an `edit-progress` element followed by a `width:` style.
+/// Widths can be fractional, so parse as a float and round.
+fn progress_bar_percent(html: &str) -> Option<u32> {
+  fn parse_width(s: &str) -> Option<u32> {
+    let w = s.find("width:")?;
+    let pct = s[w + 6..].trim_start();
+    let end = pct.find('%')?;
+    let raw = pct[..end].trim();
+    let value = raw
+      .parse::<f32>()
+      .ok()
+      .map(|p| p.round().clamp(0.0, 100.0) as u32);
+    if value.is_none() {
+      debug_log!("progress_bar_percent(): couldn't parse width {raw:?}");
+    }
+    value
+  }
+
+  let fragment = Html::parse_fragment(html);
+  let bar_sel = Selector::parse(r#".progress-bar [style*="width"]"#).expect("valid");
+  fragment
+    .select(&bar_sel)
+    .find_map(|el| el.value().attr("style").and_then(parse_width))
+    .or_else(|| {
+      html
+        .find("edit-progress")
+        .and_then(|i| parse_width(&html[i..]))
+    })
+}
+
+/// Whether a shelf `.book-pane` is for a privately shelved book. Uses the
+/// privacy toggle button if the pane has one; otherwise looks for StoryGraph's
+/// eye-slash icon on the status button, ignoring the copies of that icon in
+/// the dropdown's "private" submenu (present on every book).
+fn pane_is_private(pane: scraper::ElementRef) -> bool {
+  let toggle_sel = Selector::parse("button.js-book-private-toggle").expect("valid");
+  if let Some(toggle) = pane.select(&toggle_sel).next() {
+    return toggle
+      .value()
+      .attr("title")
+      .unwrap_or("")
+      .to_lowercase()
+      .contains("public");
+  }
+
+  let slash_sel = Selector::parse(r#"svg path[d^="M4.5 19.5 19.5 4.5"]"#).expect("valid");
+  pane.select(&slash_sel).any(|path| {
+    !path
+      .ancestors()
+      .filter_map(scraper::ElementRef::wrap)
+      .any(|e| {
+        let v = e.value();
+        v.classes()
+          .any(|c| c == "read-status-dropdown-content" || c == "private-status-submenu")
+          || v.attr("data-controller") == Some("private-status-menu")
+      })
+  })
+}
+
 /// Parses one shelf section of the `/currently-reading/{slug}` page into
 /// books. `container_selector` is `.read-books` (currently reading) or
 /// `.paused-books-panes` (paused); `status` is the label attached to each
-/// result.
+/// result. Thin wrapper over `scrape_shelf_section` for callers (and tests)
+/// that hold the raw HTML.
 fn parse_shelf_section(html: &str, container_selector: &str, status: &str) -> Vec<ReadingBook> {
-  let doc = Html::parse_document(html);
+  scrape_shelf_section(&Html::parse_document(html), container_selector, status)
+}
+
+fn scrape_shelf_section(doc: &Html, container_selector: &str, status: &str) -> Vec<ReadingBook> {
   let container_sel = Selector::parse(container_selector).expect("valid");
   let pane_sel = Selector::parse(".book-pane").expect("valid");
   let title_sel = Selector::parse("h3.font-bold a").expect("valid");
@@ -965,7 +1075,7 @@ fn parse_shelf_section(html: &str, container_selector: &str, status: &str) -> Ve
       // are tracked by time on StoryGraph and don't render the hidden percent input at
       // all, so that selector alone silently reads back 0 for them.
       let pane_html = pane.html();
-      let progress: u32 = progress_percent_from_edit_progress(&pane_html)
+      let progress: u32 = progress_bar_percent(&pane_html)
         .or_else(|| {
           pane
             .select(&progress_sel)
@@ -973,7 +1083,10 @@ fn parse_shelf_section(html: &str, container_selector: &str, status: &str) -> Ve
             .and_then(|el| el.value().attr("value"))
             .and_then(|v| v.parse().ok())
         })
-        .unwrap_or(0);
+        .unwrap_or_else(|| {
+          debug_log!("scrape_shelf_section(): no progress found for {book_id} ({status})");
+          0
+        });
 
       let edition_text = pane
         .select(&edition_sel)
@@ -1022,6 +1135,7 @@ fn parse_shelf_section(html: &str, container_selector: &str, status: &str) -> Ve
         year,
         status: status.to_owned(),
         cover_url,
+        is_private: pane_is_private(pane),
       });
     }
   }
@@ -1311,9 +1425,10 @@ fn parse_user_book(book_id: &str, html: &str) -> Result<UserBook> {
 
   let status_text = text_of(&doc, ".read-status-label");
   let status_id = parse_status_text(&status_text);
+  let is_private = privacy_toggle(&doc).is_some_and(|t| t.is_private);
 
   // Try progress bar width first (most reliable), then hidden inputs.
-  let progress_percent = progress_percent_from_edit_progress(html).unwrap_or_else(|| {
+  let progress_percent = progress_bar_percent(html).unwrap_or_else(|| {
     hidden_value(html, "read_status[last_reached_percent]")
       .parse()
       .unwrap_or(0)
@@ -1359,6 +1474,7 @@ fn parse_user_book(book_id: &str, html: &str) -> Result<UserBook> {
   Ok(UserBook {
     book_id: book_id.to_owned(),
     status_id,
+    is_private,
     progress_percent,
     progress_pages,
     book_pages,
@@ -1369,6 +1485,7 @@ fn parse_user_book(book_id: &str, html: &str) -> Result<UserBook> {
 
 /// Sets the reading status of a book (to-read, reading, read, paused, dnf).
 /// POSTs to `/update-status.js` and re-fetches the book page to confirm.
+/// The book's privacy is left as it is (see `set_privacy`).
 pub fn update_status(book_id: &str, status_id: u8) -> Result<UserBook> {
   require_credentials()?;
   let (_html, data) = fetch_page_data(book_id)?;
@@ -1378,6 +1495,39 @@ pub fn update_status(book_id: &str, status_id: u8) -> Result<UserBook> {
   post_form(&path, &[("authenticity_token", data.csrf.as_str())])?;
 
   // Re-fetch to return current state.
+  parse_user_book(book_id, &get(&format!("/books/{book_id}"))?)
+}
+
+/// Makes a book private or public by submitting the book page's privacy toggle
+/// form (`/toggle-book-privacy.js`). No-op if it's already in the wanted state.
+pub fn set_privacy(book_id: &str, private: bool) -> Result<UserBook> {
+  require_credentials()?;
+  let html = get(&format!("/books/{book_id}"))?;
+  let Some(toggle) = privacy_toggle(&Html::parse_document(&html)) else {
+    return Err(
+      UserError(
+        "This book has no privacy option on StoryGraph. Set a status for it first.".to_owned(),
+      )
+      .into(),
+    );
+  };
+
+  if toggle.is_private == private {
+    return parse_user_book(book_id, &html);
+  }
+
+  let path = if toggle.action.is_empty() {
+    format!("/toggle-book-privacy.js?book_id={book_id}&private={private}")
+  } else {
+    toggle.action
+  };
+  let fields: Vec<(&str, &str)> = toggle
+    .fields
+    .iter()
+    .map(|(k, v)| (k.as_str(), v.as_str()))
+    .collect();
+  post_form(&path, &fields)?;
+
   parse_user_book(book_id, &get(&format!("/books/{book_id}"))?)
 }
 
@@ -1778,7 +1928,7 @@ pub fn find_on_shelf(query_title: &str) -> Result<Option<(String, u32)>> {
       // input at all, so that selector alone silently reads back 0 for them.
       // The rendered progress bar's width is present regardless of tracking
       // method and is what the site itself shows the user.
-      let progress: u32 = progress_percent_from_edit_progress(&pane_html)
+      let progress: u32 = progress_bar_percent(&pane_html)
         .or_else(|| {
           pane
             .select(&progress_sel)
@@ -2240,12 +2390,18 @@ mod tests {
   }
 
   #[test]
-  fn progress_percent_from_edit_progress_finds_bar() {
+  fn progress_bar_percent_reads_both_bar_shapes() {
+    // edit-progress bar (page- and time-tracked books)
     assert_eq!(
-      progress_percent_from_edit_progress("<div class='edit-progress' style='width: 33%'></div>"),
+      progress_bar_percent("<div class='edit-progress' style='width: 33%'></div>"),
       Some(33)
     );
-    assert_eq!(progress_percent_from_edit_progress("no bar here"), None);
+    // .progress-bar > div (e.g. paused audiobooks); fractional widths round
+    assert_eq!(
+      progress_bar_percent(r#"<div class="progress-bar"><div style="width: 44.6%"></div></div>"#),
+      Some(45)
+    );
+    assert_eq!(progress_bar_percent("no bar here"), None);
   }
 
   // Trimmed markup from a real /browse response (captured 2026-10-19): classes,

@@ -122,6 +122,8 @@ const Entry kDe[] = {
   {"Paused", "Pausiert"},
   {"Paused (%1)", "Pausiert (%1)"},
   {"Paused reading", "Lesen pausiert"},
+  {"Private: No", "Privat: Nein"},
+  {"Private: Yes", "Privat: Ja"},
   {"Password", "Passwort"},
   {"Periodically by read percentage", "Periodisch nach Lesefortschritt"},
   {"Plot", "Handlung"},
