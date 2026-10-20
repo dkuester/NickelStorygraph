@@ -1,5 +1,7 @@
-# Publishes a pre-release for every pushed v* tag: builds in the toolchain
-# image, runs the same checks as CI, and attaches Kobo.tgz plus the .adds zip.
+# Publishes a pre-release for every pushed v* tag: builds both firmware lines in
+# their toolchain images, runs the same checks as CI, and attaches
+#   KoboRoot.tgz                            — firmware 4.x (Qt 5)
+#   Kobo.tgz + NickelStorygraph-adds.zip    — firmware 5.18+ (Qt 6)
 # The release text comes from .github/release-notes/<tag>.md, which has to be
 # merged to main before the tag is pushed (see .github/release-notes/README.md).
 name: Release
@@ -13,24 +15,16 @@ permissions:
   packages: read
 
 jobs:
-  release:
+  check:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/nickelstorygraph-toolchain:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     env:
       TAG: ${{ github.ref_name }}
+    outputs:
+      title: ${{ steps.notes.outputs.title }}
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
-          # git describe derives the version from the tag.
           fetch-depth: 0
-      - name: Trust the checkout
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
       - name: Check tag and release notes
         id: notes
         run: |
@@ -50,23 +44,67 @@ jobs:
           fi
           # Release title: the notes' first heading without the leading #s.
           title="$(sed -n '1s/^#* *//p' "$notes")"
-          echo "path=$notes" >> "$GITHUB_OUTPUT"
           echo "title=${title:-$TAG}" >> "$GITHUB_OUTPUT"
 
+  build:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - qt: "6"
+            image: nickelstorygraph-toolchain
+          - qt: "5"
+            image: nickelstorygraph-toolchain-qt5
+    name: build (Qt ${{ matrix.qt }})
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      QT: ${{ matrix.qt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          # git describe derives the version from the tag.
+          fetch-depth: 0
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: just lint build package
       - run: just test
-
-      - name: Package the .adds payload
+      - name: Collect the release files
         run: |
-          cd mnt/onboard/.adds
-          zip -q -X -r "$GITHUB_WORKSPACE/NickelStorygraph-adds.zip" NickelStorygraph
+          mkdir -p dist
+          if [ "$QT" = "5" ]; then
+            cp KoboRoot.tgz dist/
+          else
+            cp hook/Kobo.tgz dist/
+            (cd mnt/onboard/.adds && zip -q -X -r "$GITHUB_WORKSPACE/dist/NickelStorygraph-adds.zip" NickelStorygraph)
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-qt${{ matrix.qt }}
+          path: dist/
+          if-no-files-found: error
 
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          name: ${{ steps.notes.outputs.title }}
-          body_path: ${{ steps.notes.outputs.path }}
+          name: ${{ needs.check.outputs.title }}
+          body_path: .github/release-notes/${{ github.ref_name }}.md
           prerelease: true
           fail_on_unmatched_files: true
           files: |
-            hook/Kobo.tgz
-            NickelStorygraph-adds.zip
+            dist/Kobo.tgz
+            dist/NickelStorygraph-adds.zip
+            dist/KoboRoot.tgz
