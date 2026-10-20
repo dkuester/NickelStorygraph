@@ -29,8 +29,38 @@ REF = Path(__file__).resolve().parent / "libnickel-5.18.syms.gz"
 SYM_RE = re.compile(r'\.(?:sym|name)\s*=\s*"([^"]+)"')
 
 
+def qt6_source(src: str) -> str:
+    """Returns the source as the Qt6 build sees it.
+
+    The hook switches a few ABI-dependent symbols with `#if NSG_QT6` /
+    `#if !NSG_QT6`, `#else` and `#endif` (see nickelstorygraph.cc). Only the
+    Qt6 branches are checked against the 5.18 reference; other `#if` blocks
+    are kept as-is.
+    """
+    out = []
+    stack = []  # per open #if: None (not ours) or whether its branch is kept
+    for line in src.splitlines():
+        directive = line.strip()
+        if directive.startswith("#if"):
+            if directive in ("#if NSG_QT6", "#if !NSG_QT6"):
+                stack.append(directive == "#if NSG_QT6")
+            else:
+                stack.append(None)
+            continue
+        if directive.startswith("#else") and stack:
+            if stack[-1] is not None:
+                stack[-1] = not stack[-1]
+            continue
+        if directive.startswith("#endif") and stack:
+            stack.pop()
+            continue
+        if all(keep is not False for keep in stack):
+            out.append(line)
+    return "\n".join(out)
+
+
 def main() -> int:
-    src = HOOK_SRC.read_text()
+    src = qt6_source(HOOK_SRC.read_text())
     # All libnickel symbols referenced by the hook are C++ mangled names
     # (prefix `_Z`). The `_Z` filter excludes non-symbol `.name` values such as
     # the plugin name in the `nh_plugin` registration struct.
