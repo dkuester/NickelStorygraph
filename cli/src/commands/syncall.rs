@@ -31,6 +31,10 @@ pub struct SyncAll {
   #[argh(switch)]
   pub include_store: bool,
 
+  /// also link books that aren't linked yet (otherwise only linked books sync)
+  #[argh(switch)]
+  pub link_new: bool,
+
   /// only report what would be synced
   #[argh(switch)]
   pub dry_run: bool,
@@ -114,13 +118,14 @@ fn parse_known(input: &str) -> Result<HashMap<String, Known>> {
 }
 
 /// Picks the books to sync: progress moved forward since the last sync, and
-/// either already linked, or currently being read (an unlinked finished book
-/// would otherwise land on StoryGraph as "read" years later). Store books only
-/// with `include_store`.
+/// either already linked, or — only with `link_new` — unlinked but currently
+/// being read (an unlinked finished book would otherwise land on StoryGraph as
+/// "read" years later). Store books only with `include_store`.
 fn select_candidates(
   rows: &[Row],
   known: &HashMap<String, Known>,
   include_store: bool,
+  link_new: bool,
 ) -> Vec<Candidate> {
   rows
     .iter()
@@ -133,7 +138,7 @@ fn select_candidates(
       if r.progress == 0 || r.progress <= k.last_progress {
         return None;
       }
-      if k.linked_id.is_none() && r.read_status != READ_STATUS_READING {
+      if k.linked_id.is_none() && (!link_new || r.read_status != READ_STATUS_READING) {
         return None;
       }
       Some(Candidate {
@@ -242,7 +247,7 @@ pub fn run(args: SyncAll) -> Result<()> {
     .read_to_string(&mut input)
     .context("Failed to read the book list from stdin")?;
   let known = parse_known(&input)?;
-  let candidates = select_candidates(&read_rows()?, &known, args.include_store);
+  let candidates = select_candidates(&read_rows()?, &known, args.include_store, args.link_new);
   log!("sync-all: {} candidate(s)", candidates.len());
 
   let books: Vec<Outcome> = if args.dry_run {
@@ -327,11 +332,11 @@ mod tests {
     ];
     let ids = |c: Vec<Candidate>| c.into_iter().map(|c| c.content_id).collect::<Vec<_>>();
     assert_eq!(
-      ids(select_candidates(&rows, &HashMap::new(), false)),
+      ids(select_candidates(&rows, &HashMap::new(), false, true)),
       vec!["file:///mnt/onboard/a.epub"]
     );
     assert_eq!(
-      ids(select_candidates(&rows, &HashMap::new(), true)).len(),
+      ids(select_candidates(&rows, &HashMap::new(), true, true)).len(),
       2
     );
   }
@@ -348,7 +353,7 @@ mod tests {
       ("file:///b", Some("sg-b"), 20), // forward
       ("file:///c", Some("sg-c"), 50), // backward
     ]);
-    let c = select_candidates(&rows, &k, false);
+    let c = select_candidates(&rows, &k, false, false);
     assert_eq!(c.len(), 1);
     assert_eq!(c[0].content_id, "file:///b");
     assert_eq!(c[0].last_progress, 20);
@@ -363,10 +368,21 @@ mod tests {
       row("file:///linked-finished", 100, 2),
     ];
     let k = known(&[("file:///linked-finished", Some("sg"), 80)]);
-    let ids: Vec<_> = select_candidates(&rows, &k, false)
+    let ids: Vec<_> = select_candidates(&rows, &k, false, true)
       .into_iter()
       .map(|c| c.content_id)
       .collect();
     assert_eq!(ids, vec!["file:///reading", "file:///linked-finished"]);
+  }
+
+  #[test]
+  fn select_without_link_new_keeps_only_linked() {
+    let rows = vec![row("file:///unlinked", 10, 1), row("file:///linked", 30, 1)];
+    let k = known(&[("file:///linked", Some("sg"), 20)]);
+    let ids: Vec<_> = select_candidates(&rows, &k, false, false)
+      .into_iter()
+      .map(|c| c.content_id)
+      .collect();
+    assert_eq!(ids, vec!["file:///linked"]);
   }
 }
