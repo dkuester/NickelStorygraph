@@ -1,5 +1,8 @@
 ﻿#include <NickelHook.h>
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QSettings>
 #include <QTimer>
@@ -7,6 +10,7 @@
 #include <stdlib.h>
 
 #include "cli.h"
+#include "nickelstorygraph.h"
 #include "settings.h"
 #include "synccontroller.h"
 #include "translations.h"
@@ -188,5 +192,25 @@ void Settings::setHomeMenuEnabled(bool value) { config->setValue("home_menu", va
 void Settings::setHomeMenuReading(bool value) { config->setValue("home_menu_reading", value); }
 void Settings::setHomeMenuFeed(bool value)    { config->setValue("home_menu_feed", value); }
 void Settings::setHomeMenuGoals(bool value)   { config->setValue("home_menu_goals", value); }
+
+bool Settings::getSyncAllStoreBooks() {
+  if (config->contains("sync_all_store_books"))
+    return config->value("sync_all_store_books").toBool();
+  return isTolinoDevice();
+}
+
+QByteArray Settings::knownBooksJson() {
+  QJsonArray books;
+  for (QString const &key : internal->childGroups()) {
+    QJsonObject book;
+    book["key"] = key;
+    book["linked_id"] = internal->value(key + "/linkedbook").toString();
+    book["last_progress"] = internal->value(key + "/progress", 0).toInt();
+    books.append(book);
+  }
+  // Never empty: the CLI reads stdin to the end, and CLI only closes the
+  // channel when there is data to write.
+  return QJsonDocument(books).toJson(QJsonDocument::Compact);
+}
 
 bool Settings::is24HourClock() { return kobo->value("ApplicationPreferences/is24HourClock").toBool(); }
