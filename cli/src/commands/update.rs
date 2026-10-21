@@ -35,62 +35,25 @@ pub fn run(args: Update) -> Result<()> {
   let book_id = if !book_id.is_empty() {
     book_id
   } else {
-    let meta = book_title_query(content_id.as_deref());
-
-    // Before doing an ISBN/search lookup, check if the book is already on the user's
-    // currently-reading shelf. If so, link to that edition and let the hook ask the
-    // user whether to keep StoryGraph's progress or push Kobo's.
-    if let Some((ref title, _)) = meta
-      && let Ok(Some((shelf_id, shelf_progress))) = storygraph::find_on_shelf(title)
-    {
-      emit_json!(
-        "{}",
-        serde_json::json!({
-          "resolved_book_id": shelf_id,
-          "needs_shelf_confirmation": true,
-          "progress_percent": shelf_progress,
-        })
-      );
-      return Ok(());
-    }
-
-    // Try each ISBN first. A genuine "no result" (Ok(None)) falls through to the
-    // title search, but a real error (network, expired session) must propagate —
-    // swallowing it here as "no match" could silently link the wrong book.
-    let mut found = None;
-    for isbn in &isbns {
-      match storygraph::find_by_isbn(isbn)? {
-        Some(result) => {
-          // Reject ISBN results that don't match the Kobo title — the EPUB's ISBN metadata
-          // sometimes points to a different book (e.g. a sampler or wrong edition).
-          if let Some((ref title, _)) = meta
-            && title_match_score(title, &result.title) < 0.3
-          {
-            continue;
-          }
-          found = Some(result);
-          break;
-        }
-        None => continue,
+    match resolve_book(content_id.as_deref(), &isbns)? {
+      Resolution::Found(book_id) => book_id,
+      // Already on the currently-reading shelf: link to that edition and let the
+      // hook ask whether to keep StoryGraph's progress or push Kobo's.
+      Resolution::OnShelf { book_id, progress } => {
+        emit_json!(
+          "{}",
+          serde_json::json!({
+            "resolved_book_id": book_id,
+            "needs_shelf_confirmation": true,
+            "progress_percent": progress,
+          })
+        );
+        return Ok(());
+      }
+      Resolution::NotFound => {
+        book_not_found("Couldn't find this book on StoryGraph. Please link it manually.")
       }
     }
-
-    if found.is_none()
-      && let Some((title, author)) = meta.as_ref()
-    {
-      // Same rule: a failed search is a real error, not "no results".
-      // Kobo titles often carry the series in parentheses, which makes
-      // StoryGraph's search return nothing.
-      let title = strip_bracketed(title);
-      let results = storygraph::search(&format!("{title} {author}"))?;
-      found = best_title_match(results, &title);
-    }
-
-    let initial_id = match found {
-      Some(book) => book.book_id,
-      None => book_not_found("Couldn't find this book on StoryGraph. Please link it manually."),
-    };
-    storygraph::prefer_digital_edition(&initial_id)?
   };
 
   let user_book = storygraph::update_progress(&book_id, "percentage", args.value)?;
@@ -98,6 +61,70 @@ pub fn run(args: Update) -> Result<()> {
   resp["resolved_book_id"] = json!(book_id);
   emit_json!("{}", resp);
   Ok(())
+}
+
+/// How a Kobo book without a known StoryGraph id was matched.
+pub enum Resolution {
+  /// Found by ISBN or title search; the digital edition is preferred.
+  Found(String),
+  /// Already on the user's currently-reading shelf, with StoryGraph's progress.
+  OnShelf {
+    book_id: String,
+    progress: u32,
+  },
+  NotFound,
+}
+
+/// Matches a Kobo book to a StoryGraph edition: the currently-reading shelf
+/// first, then each ISBN, then a title/author search. Real errors (network,
+/// expired session) propagate; only a genuine "no match" is `NotFound`.
+pub fn resolve_book(content_id: Option<&str>, isbns: &[String]) -> Result<Resolution> {
+  let meta = book_title_query(content_id);
+
+  if let Some((ref title, _)) = meta
+    && let Ok(Some((book_id, progress))) = storygraph::find_on_shelf(title)
+  {
+    return Ok(Resolution::OnShelf { book_id, progress });
+  }
+
+  // Try each ISBN first. A genuine "no result" (Ok(None)) falls through to the
+  // title search, but a real error (network, expired session) must propagate —
+  // swallowing it here as "no match" could silently link the wrong book.
+  let mut found = None;
+  for isbn in isbns {
+    match storygraph::find_by_isbn(isbn)? {
+      Some(result) => {
+        // Reject ISBN results that don't match the Kobo title — the EPUB's ISBN metadata
+        // sometimes points to a different book (e.g. a sampler or wrong edition).
+        if let Some((ref title, _)) = meta
+          && title_match_score(title, &result.title) < 0.3
+        {
+          continue;
+        }
+        found = Some(result);
+        break;
+      }
+      None => continue,
+    }
+  }
+
+  if found.is_none()
+    && let Some((title, author)) = meta.as_ref()
+  {
+    // Same rule: a failed search is a real error, not "no results".
+    // Kobo titles often carry the series in parentheses, which makes
+    // StoryGraph's search return nothing.
+    let title = strip_bracketed(title);
+    let results = storygraph::search(&format!("{title} {author}"))?;
+    found = best_title_match(results, &title);
+  }
+
+  match found {
+    Some(book) => Ok(Resolution::Found(storygraph::prefer_digital_edition(
+      &book.book_id,
+    )?)),
+    None => Ok(Resolution::NotFound),
+  }
 }
 
 /// Picks the best match from `results` for `title`, requiring a near-exact match (≥ 90%

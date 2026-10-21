@@ -399,14 +399,18 @@ fn read_sqlite_isbn(content_id: &str) -> Result<Vec<String>> {
   Ok(Vec::new())
 }
 
-pub fn get_isbn(content_id: &str) -> Vec<String> {
-  let res = if content_id.starts_with("file://") {
+/// Reads a book's ISBNs (EPUB metadata for sideloaded books, the database
+/// otherwise). Errors are returned, not turned into a book-not-found exit.
+pub fn try_get_isbn(content_id: &str) -> Result<Vec<String>> {
+  if content_id.starts_with("file://") {
     read_epub_isbn(content_id)
   } else {
     read_sqlite_isbn(content_id)
-  };
+  }
+}
 
-  match res {
+pub fn get_isbn(content_id: &str) -> Vec<String> {
+  match try_get_isbn(content_id) {
     Ok(isbn) => isbn,
     Err(e) => book_not_found(&format!(
       "Encountered an unexpected error while finding ISBN. Please link book manually.<br><br>{:#}",
