@@ -14,6 +14,7 @@ pub mod login;
 pub mod search;
 pub mod setuserbook;
 pub mod switchedition;
+pub mod syncall;
 pub mod syncedition;
 pub mod update;
 pub mod updatejournal;
