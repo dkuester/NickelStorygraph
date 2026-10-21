@@ -40,6 +40,7 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] "Log in" row removed from Settings: email/password login always fails behind Cloudflare's bot check; the dialog code stays for when that changes
 - [x] Shop books link again: the Tolino shop leaves Nickel's `ISBN` column empty (0 of 362 shop books in a real library), and a missing ISBN aborted auto-link before the title search. The ISBN is now read from the shop's cover URL (`…/9781068563119_A62207078/cover`, 350 of 362 with a valid check digit), with the title search as fallback (found in the Tolino device test)
 - [x] The in-book "Manually link book" entry also uses the bracket-free search text (missed in the first fix)
+- [x] "Sync all books" in the home menu: syncs every book whose progress in `KoboReader.sqlite` moved forward since its last sync — books read in Kobalt or offline (e.g. on a train without Wi-Fi). Previews and asks first; links unlinked books only if Nickel shows them as currently reading. Sideloaded books always; store books per `sync_all_store_books` (default off on Kobo, which syncs store books natively, on on Tolino)
 - [x] Upstream sync (Oct 2026): private books, paused-audiobook progress, fixed 4-book paging in Currently Reading, wrapped feed titles, the `nickelstoregraph` → `nickelstorygraph` rename (the CLI log is now `nickelstorygraph.log`) and NickelHardcover coexistence, the last adapted to the single Qt 6 `ReadingMenuView` constructor. NickelHardcover itself doesn't support firmware 5.x yet, so that path is untested on device
 - [x] Release workflow: a pushed `v*` tag builds and tests in the toolchain image and publishes the pre-release with `Kobo.tgz` and the `.adds` zip; notes live in `.github/release-notes/<tag>.md`
 - [x] Hook rebuilds when `git describe` changes (version stamp), so a local build never ships a stale version string
@@ -49,7 +50,15 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 
 Low effort, clear value — shippable in a single sitting.
 
-_None open — both quick wins shipped; see "Recently completed" above._
+### Warn before linking a store book on Kobo
+On a Kobo, store books already sync with StoryGraph natively. Syncing or
+(manually) linking one through the plugin as well risks double updates, so the
+in-book "Sync now", "Update book status" and "Manually link book" actions
+should first ask "This is a store book Kobo already syncs — link it anyway?".
+
+- **Scope:** store book = content ID without `file://`; reuse
+  `sync_all_store_books` (when it's false, warn). No warning on Tolino.
+- **Effort:** small.
 
 ## High priority
 
@@ -72,6 +81,15 @@ filesystems, so "OTA" is inherently two-phase:
   staging as a minimal safety net.
 - **Effort:** medium-high. Ship in two steps: (1) CLI/config in-place update
   (no reboot), (2) Kobo.tgz staging + reboot + post-boot version verification.
+
+### Manual mapping of sideloaded books
+As a user I want to map all sideloaded books that have reading progress to
+StoryGraph by hand, in one list — for the books "Sync all books" can't link
+automatically (no ISBN, ambiguous title) and as a review of what is linked.
+
+- **Scope:** a dialog listing sideloaded books with progress and their link
+  state; tapping one opens the existing search/edition picker.
+- **Effort:** medium (UI).
 
 ## Low priority (optional)
 
@@ -138,13 +156,10 @@ other unsupported formats are handed back to Nickel's reader and sync as usual.
   `TimeSpentReading`; Kobalt's own per-book state carries a `nickel_progress`
   field. So no Kobalt fork is needed for syncing.
 
-- **Scope:** a Kobalt-aware sync path — read the percentage from
-  `KoboReader.sqlite` (`content.___PercentRead`) instead of the live
-  `ReadingView` for books whose last session was Kobalt's, triggered from the
-  home menu / daily sync (there is no book-close hook in Kobalt). An in-book
-  StoryGraph menu inside Kobalt would need an extension point in Kobalt itself
-  — propose it upstream to Kobalt rather than forking.
-- **Blocker:** none for the sync path on Kobo; Tolino waits for Kobalt's Tolino
-  support. Percentages are integers, so very long books advance slowly.
-- **Effort:** medium for the sqlite-based sync path.
+- **Done:** "Sync all books" (home menu) syncs Kobalt-read books from the
+  database on demand.
+- **Left:** run it automatically (on Wi-Fi connect or at the daily-sync hour),
+  and an in-book StoryGraph menu inside Kobalt, which needs an extension point
+  in Kobalt itself — propose it upstream to Kobalt rather than forking.
+- **Effort:** small for the automatic trigger.
 
