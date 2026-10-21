@@ -11,6 +11,8 @@ name: Toolchain image
 
 on:
   push:
+    # Branches only: a pushed release tag must not rebuild the images.
+    branches: ["**"]
     paths:
       - ".forgejo/nickeltc/**"
       - ".forgejo/nickeltc-qt6/**"
