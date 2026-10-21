@@ -30,6 +30,7 @@ public:
   static CLI *getGoals(Options options = Options());
   static CLI *getStreak(Options options = Options());
   static CLI *checkUpdate(Options options = Options());
+  static CLI *syncAll(bool includeStore, bool dryRun, Options options = Options());
   static CLI *listBookmarks(Options options = Options());
   static CLI *listEditions(QString bookId, int readingFormat, QString language, Options options = Options());
   static CLI *listJournal(int limit, int offset, Options options = Options());

@@ -196,6 +196,16 @@ const Entry kDe[] = {
   // Update check.
   {"A new version is available: %1<br>You are running %2.", "Eine neue Version ist verfügbar: %1<br>Du verwendest %2."},
   {"Check for updates", "Nach Updates suchen"},
+  {"Sync all books", "Alle Bücher synchronisieren"},
+  {"All books are up to date.", "Alle Bücher sind auf dem neuesten Stand."},
+  {"%1 book(s) with new reading progress.", "%1 Buch/Bücher mit neuem Lesefortschritt."},
+  {"%1 of them will be linked to StoryGraph for the first time.", "%1 davon werden zum ersten Mal mit StoryGraph verknüpft."},
+  {"Sync", "Synchronisieren"},
+  {"Synced: %1", "Synchronisiert: %1"},
+  {"Already up to date on StoryGraph: %1", "Auf StoryGraph schon aktuell: %1"},
+  {"Not found on StoryGraph: %1", "Auf StoryGraph nicht gefunden: %1"},
+  {"Link them from the book menu.", "Du kannst sie im Buchmenü verknüpfen."},
+  {"Errors: %1", "Fehler: %1"},
   {"You're up to date (%1).", "Du bist auf dem neuesten Stand (%1)."},
 
   // Review moods (displayed in the review dialog).

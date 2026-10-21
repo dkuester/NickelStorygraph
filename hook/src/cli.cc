@@ -19,6 +19,16 @@ CLI *CLI::getStreak(Options options) { return new CLI({"get-streak"}, options); 
 
 CLI *CLI::checkUpdate(Options options) { return new CLI({"check-update"}, options); }
 
+CLI *CLI::syncAll(bool includeStore, bool dryRun, Options options) {
+  QStringList arguments = {"sync-all"};
+  if (includeStore)
+    arguments.append("--include-store");
+  if (dryRun)
+    arguments.append("--dry-run");
+  options.stdinData = Settings::getInstance()->knownBooksJson();
+  return new CLI(arguments, options);
+}
+
 CLI *CLI::listBookmarks(Options options) { return new CLI({"list-bookmarks"}, options); }
 
 CLI *CLI::listEditions(QString bookId, int readingFormat, QString language, Options options) {

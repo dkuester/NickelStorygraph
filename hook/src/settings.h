@@ -74,6 +74,12 @@ public:
 
   bool is24HourClock();
 
+  // "Sync all books": whether store books are included. Kobo syncs store books
+  // with StoryGraph natively, so the default is off there and on on Tolino.
+  bool getSyncAllStoreBooks();
+  // Every book with plugin settings, as the JSON list `sync-all` reads on stdin.
+  QByteArray knownBooksJson();
+
 public Q_SLOTS:
   void currentViewChanged(QString name);
 

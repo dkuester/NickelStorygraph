@@ -101,6 +101,9 @@ PowerTimer *construct_PowerTimer(QString const &name, QObject *parent);
 extern void (*PowerTimer__fireAt)(PowerTimer *__this, QDateTime const &datatime);
 extern int (*PowerTimer__timeRemaining)(PowerTimer *__this);
 
+// True on a Tolino (asks Nickel; the Qt5 build only runs on Kobo devices).
+bool isTolinoDevice();
+
 // Shows/hides the home screen "StoryGraph" tab bar button immediately, so
 // toggling the setting in SettingsDialog doesn't require a Nickel restart.
 // No-op if the button hasn't been constructed yet (e.g. NickelMenu present).

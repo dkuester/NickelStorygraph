@@ -31,6 +31,7 @@
 #include "reading/readingdialog.h"
 #include "settings.h"
 #include "settings/settingsdialog.h"
+#include "syncall.h"
 #include "synccontroller.h"
 #include "translations.h"
 
@@ -38,6 +39,14 @@ typedef void ReadingController;
 typedef void Volume;
 typedef void Bookmark;
 static void (*ReadingController__setVolume)(ReadingController *_this, Volume *volume, Bookmark *bookmark);
+#if NSG_QT6
+// Kobo vs. Tolino: only firmware 5.18+ runs on Tolinos, so the Qt5 build needs
+// no lookup. Both symbols are optional; without them the device counts as Kobo.
+typedef void Device;
+static Device *(*Device__getCurrentDevice)() = nullptr;
+static bool (*Device__isTolino)(Device const *_this) = nullptr;
+#endif
+
 #if NSG_QT6
 static QString (*Content__getId)(Volume *_this, QString const &);
 #else
@@ -224,6 +233,8 @@ static struct nh_hook NickelStorygraphHook[] = {
 
 static struct nh_dlsym NickelStorygraphDlsym[] = {
 #if NSG_QT6
+  { .name = "_ZN6Device16getCurrentDeviceEv",                                  .out = nh_symoutptr(Device__getCurrentDevice),      .desc = "Kobo/Tolino detection", .optional = true },
+  { .name = "_ZNK6Device8isTolinoEv",                                          .out = nh_symoutptr(Device__isTolino),              .desc = "Kobo/Tolino detection", .optional = true },
   { .name = "_ZNK7Content5getIdERK7QString",                                 .out = nh_symoutptr(Content__getId) },
 #else
   { .name = "_ZNK7Content5getIdEv",                                            .out = nh_symoutptr(Content__getId) },
@@ -426,6 +437,17 @@ QString scaledNavIconPath() {
   return tempOut;
 }
 
+bool isTolinoDevice() {
+#if NSG_QT6
+  if (Device__getCurrentDevice && Device__isTolino) {
+    Device *device = Device__getCurrentDevice();
+    if (device)
+      return Device__isTolino(device);
+  }
+#endif
+  return false;
+}
+
 void checkForUpdates() {
   CLI *cli = CLI::checkUpdate();
   QObject::connect(cli, &CLI::response, [](QJsonObject doc) {
@@ -461,6 +483,7 @@ void showStorygraphHomeMenu(QWidget *anchor) {
     items.append({t("Community Feed"), 2});
   if (settings->getHomeMenuGoals())
     items.append({t("Reading Goals"), 3});
+  items.append({t("Sync all books"), 6});
   items.append({t("Check for updates"), 5});
   items.append({t("Settings"), 4});
 
@@ -496,6 +519,7 @@ void showStorygraphHomeMenu(QWidget *anchor) {
       // sync/progress info for - suppress the t("Book information") section.
       else if (val == 4) SettingsDialog::show(true);
       else if (val == 5) checkForUpdates();
+      else if (val == 6) SyncAll::start();
     });
     QObject::connect(mti, SIGNAL(tapped(bool)), action, SIGNAL(triggered()));
   }
