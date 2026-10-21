@@ -121,25 +121,30 @@ left is per-prompt tracking (which books fulfil which prompts).
 
 ### Kobalt compatibility *(optional)*
 [Kobalt](https://github.com/nicoverbruggen/kobalt) is an alternative EPUB
-reader (CREngine) that runs inside Nickel on firmware 5.18+/6.0 and can be set
-as the default reader. Books it opens bypass Nickel's reading stack, which is
-exactly where the plugin hooks in: `ReadingController::setVolume` (book open,
-auto-link, sync triggers), `ReadingMenuView` (in-book StoryGraph menu) and
-`ReadingView::getCalculatedReadProgress` (live progress). Expect no auto-sync
-and no in-book menu for Kobalt-opened books; the home-screen menu should be
-unaffected.
+reader (CREngine) that runs inside Nickel (Qt 5 build for 4.38+, Qt 6 build for
+5.18+) and can be set as the default reader. Books it opens bypass Nickel's
+reading stack, which is exactly where the plugin hooks in:
+`ReadingController::setVolume` (book open, auto-link, sync triggers),
+`ReadingMenuView` (in-book StoryGraph menu) and
+`ReadingView::getCalculatedReadProgress` (live progress). DRM books, PDFs and
+other unsupported formats are handed back to Nickel's reader and sync as usual.
 
-- **Why:** Kobalt is maintained by the author of the NickelHook Qt 6 port this
-  fork builds on and is likely to gain users on 5.18+ — silent "sync stopped
-  working" reports would land here.
-- **Scope:** (1) coexistence first: both plugins load, NickelHook hooks don't
-  collide, Kobo's reader still syncs for books Kobalt hands back (DRM, PDF);
-  (2) then a Kobalt-aware sync path — Kobalt leaves reading progress to Nickel,
-  so read it from `KoboReader.sqlite` (`content.___PercentRead`) instead of the
-  live `ReadingView`, triggered from the home menu / daily sync or on book close.
-- **Blocker:** Kobalt is not Tolino-ready yet (it is on its roadmap). Until
-  then, verification needs a Kobo on 5.18+, or waits for Kobalt's Tolino
-  release. Also verify that Kobalt really writes `___PercentRead` back.
-- **Effort:** small for the coexistence check (device test only); medium for
-  the sqlite-based sync path.
+**Verified on a Kobo Clara BW (4.46.23836) with Kobalt installed:**
+- Coexistence works: both mods load, the home bar and Nickel's reader are
+  unaffected, and Kobalt-opened books get no StoryGraph menu (as expected).
+- **Kobalt writes reading progress back to Nickel's database.** Reading ~30
+  pages of a DRM-free shop book in Kobalt moved `content.___PercentRead` from 1
+  to 2, advanced `ChapterIDBookmarked`, updated `DateLastRead` and
+  `TimeSpentReading`; Kobalt's own per-book state carries a `nickel_progress`
+  field. So no Kobalt fork is needed for syncing.
+
+- **Scope:** a Kobalt-aware sync path — read the percentage from
+  `KoboReader.sqlite` (`content.___PercentRead`) instead of the live
+  `ReadingView` for books whose last session was Kobalt's, triggered from the
+  home menu / daily sync (there is no book-close hook in Kobalt). An in-book
+  StoryGraph menu inside Kobalt would need an extension point in Kobalt itself
+  — propose it upstream to Kobalt rather than forking.
+- **Blocker:** none for the sync path on Kobo; Tolino waits for Kobalt's Tolino
+  support. Percentages are integers, so very long books advance slowly.
+- **Effort:** medium for the sqlite-based sync path.
 
