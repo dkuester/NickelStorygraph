@@ -206,6 +206,8 @@ const Entry kDe[] = {
   {"Not found on StoryGraph: %1", "Auf StoryGraph nicht gefunden: %1"},
   {"Link them from the book menu.", "Du kannst sie im Buchmenü verknüpfen."},
   {"Errors: %1", "Fehler: %1"},
+  {"(new)", "(neu)"},
+  {"+ %1 more", "+ %1 weitere"},
   {"You're up to date (%1).", "Du bist auf dem neuesten Stand (%1)."},
 
   // Review moods (displayed in the review dialog).

@@ -77,6 +77,9 @@ public:
   // "Sync all books": whether store books are included. Kobo syncs store books
   // with StoryGraph natively, so the default is off there and on on Tolino.
   bool getSyncAllStoreBooks();
+  // "Sync all books": whether books that aren't linked yet get linked on the
+  // way. Off by default, so the batch only fills in progress for linked books.
+  bool getSyncAllLinkNew();
   // Every book with plugin settings, as the JSON list `sync-all` reads on stdin.
   QByteArray knownBooksJson();
 
