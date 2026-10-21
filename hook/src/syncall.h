@@ -24,5 +24,6 @@ private:
   void closeProgress();
 
   bool includeStore = false;
+  bool linkNew = false;
   ConfirmationDialog *progress = nullptr;
 };

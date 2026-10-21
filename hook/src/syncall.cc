@@ -10,20 +10,36 @@ void SyncAll::start() { new SyncAll(); }
 
 SyncAll::SyncAll(QObject *parent) : QObject(parent) {
   includeStore = Settings::getInstance()->getSyncAllStoreBooks();
-  nh_log("SyncAll: preview (includeStore=%d)", includeStore);
+  linkNew = Settings::getInstance()->getSyncAllLinkNew();
+  nh_log("SyncAll: preview (includeStore=%d linkNew=%d)", includeStore, linkNew);
 
-  CLI *cli = CLI::syncAll(includeStore, true);
+  CLI *cli = CLI::syncAll(includeStore, linkNew, true);
   QObject::connect(cli, &CLI::response, this, &SyncAll::preview);
   QObject::connect(cli, &CLI::failure, this, &QObject::deleteLater);
 }
 
+// Titles shown in the confirmation before "+ N more".
+static constexpr int kPreviewTitles = 8;
+
 void SyncAll::preview(QJsonObject doc) {
   QJsonArray books = doc.value("books").toArray();
   int toLink = 0;
-  for (QJsonValue const &book : books) {
-    if (book.toObject().value("outcome").toString() == "would_link")
+  QStringList titles;
+  for (QJsonValue const &value : books) {
+    QJsonObject book = value.toObject();
+    bool isNew = book.value("outcome").toString() == "would_link";
+    if (isNew)
       toLink++;
+    if (titles.size() < kPreviewTitles) {
+      QString line = QString(QChar(0x2022)) + " " + book.value("title").toString().toHtmlEscaped() +
+                     QString(" (%1%)").arg(book.value("progress").toInt());
+      if (isNew)
+        line += " " + t("(new)");
+      titles.append(line);
+    }
   }
+  if (books.size() > kPreviewTitles)
+    titles.append(QString(t("+ %1 more")).arg(books.size() - kPreviewTitles));
 
   if (books.isEmpty()) {
     ConfirmationDialogFactory__showErrorDialog("StoryGraph", t("All books are up to date."));
@@ -34,6 +50,7 @@ void SyncAll::preview(QJsonObject doc) {
   QString text = QString(t("%1 book(s) with new reading progress.")).arg(books.size());
   if (toLink > 0)
     text += "<br><br>" + QString(t("%1 of them will be linked to StoryGraph for the first time.")).arg(toLink);
+  text += "<br><br>" + titles.join("<br>");
 
   ConfirmationDialog *prompt = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
   ConfirmationDialog__setTitle(prompt, t("Sync all books"));
@@ -59,7 +76,7 @@ void SyncAll::sync() {
   ConfirmationDialog__setText(progress, t("Syncing with StoryGraph..."));
   progress->open();
 
-  CLI *cli = CLI::syncAll(includeStore, false);
+  CLI *cli = CLI::syncAll(includeStore, linkNew, false);
   QObject::connect(cli, &CLI::response, this, &SyncAll::apply);
   QObject::connect(cli, &CLI::failure, this, [this]() {
     closeProgress();

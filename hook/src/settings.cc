@@ -199,6 +199,8 @@ bool Settings::getSyncAllStoreBooks() {
   return isTolinoDevice();
 }
 
+bool Settings::getSyncAllLinkNew() { return config->value("sync_all_link_new", false).toBool(); }
+
 QByteArray Settings::knownBooksJson() {
   QJsonArray books;
   for (QString const &key : internal->childGroups()) {
