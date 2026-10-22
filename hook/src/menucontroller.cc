@@ -153,6 +153,34 @@ void MenuController::showStatusMenu(QJsonObject doc) {
   }
 }
 
+void MenuController::confirmStoreBook(std::function<void()> proceed) {
+  QString contentId = SyncController::getInstance()->contentId;
+  Settings *settings = Settings::getInstance();
+  // Store books have a plain content ID; sideloaded ones a file:// path. The
+  // check only applies where store books sync natively (sync_all_store_books
+  // off, the Kobo default) and only before the book gets linked.
+  bool storeBook = !contentId.startsWith("file://");
+  if (!storeBook || settings->getSyncAllStoreBooks() || !settings->getLinkedId(contentId).isEmpty()) {
+    proceed();
+    return;
+  }
+
+  nh_log("MenuController::confirmStoreBook(%s)", qPrintable(contentId));
+  ConfirmationDialog *prompt = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
+  ConfirmationDialog__setTitle(prompt, t("Store book"));
+  ConfirmationDialog__setText(prompt, t("Kobo already syncs store books with StoryGraph. Linking this book in the "
+                                        "plugin as well can update StoryGraph twice.<br><br>Link it anyway?"));
+  ConfirmationDialog__setAcceptButtonText(prompt, t("Link anyway"));
+  ConfirmationDialog__setRejectButtonText(prompt, t("Cancel"));
+  ConfirmationDialog__showCloseButton(prompt, false);
+  QObject::connect(prompt, &QDialog::accepted, prompt, [prompt, proceed]() {
+    prompt->deleteLater();
+    proceed();
+  });
+  QObject::connect(prompt, &QDialog::rejected, prompt, &QDialog::deleteLater);
+  prompt->open();
+}
+
 void MenuController::togglePrivate() {
   CLI *cli = CLI::setPrivacy(!currentPrivate);
   QObject::connect(cli, &CLI::response, this, &MenuController::showStatusMenu);
@@ -236,12 +264,17 @@ void MenuController::triggered(QAction *action) {
     break;
 
   case MenuOption::SYNC_NOW:
-    SyncController::getInstance()->manualSync();
+    confirmStoreBook([]() { SyncController::getInstance()->manualSync(); });
     break;
 
   case MenuOption::TOGGLE_ENABLED: {
     QString contentId = SyncController::getInstance()->contentId;
-    Settings::getInstance()->setEnabled(contentId, !Settings::getInstance()->isEnabled(contentId));
+    if (Settings::getInstance()->isEnabled(contentId)) {
+      Settings::getInstance()->setEnabled(contentId, false);
+    } else {
+      // Auto-sync links the book on its first sync.
+      confirmStoreBook([contentId]() { Settings::getInstance()->setEnabled(contentId, true); });
+    }
     break;
   }
 
@@ -253,7 +286,9 @@ void MenuController::triggered(QAction *action) {
     SyncController *ctl = SyncController::getInstance();
 
     if (Settings::getInstance()->getLinkedId(ctl->contentId).isEmpty()) {
-      SearchDialog::show(ctl->contentId, CLI::searchQuery(ctl->title, ctl->author));
+      QString contentId = ctl->contentId;
+      QString query = CLI::searchQuery(ctl->title, ctl->author);
+      confirmStoreBook([contentId, query]() { SearchDialog::show(contentId, query); });
     } else {
       Settings::getInstance()->clearBookLink(ctl->contentId);
     }

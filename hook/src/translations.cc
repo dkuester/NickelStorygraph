@@ -208,6 +208,9 @@ const Entry kDe[] = {
   {"Errors: %1", "Fehler: %1"},
   {"(new)", "(neu)"},
   {"+ %1 more", "+ %1 weitere"},
+  {"Store book", "Gekauftes Buch"},
+  {"Kobo already syncs store books with StoryGraph. Linking this book in the plugin as well can update StoryGraph twice.<br><br>Link it anyway?", "Der Kobo synchronisiert gekaufte Bücher bereits selbst mit StoryGraph. Verknüpfst du dieses Buch zusätzlich im Plugin, kann StoryGraph doppelt aktualisiert werden.<br><br>Trotzdem verknüpfen?"},
+  {"Link anyway", "Trotzdem verknüpfen"},
   {"You're up to date (%1).", "Du bist auf dem neuesten Stand (%1)."},
 
   // Review moods (displayed in the review dialog).

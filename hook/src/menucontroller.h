@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <functional>
+
 #include <QJsonObject>
 #include <QObject>
 #include <QSettings>
@@ -33,6 +35,9 @@ private:
   void setSelected(bool selected);
   void setStatus(int status);
   void togglePrivate();
+  // On a Kobo, asks before the plugin links an unlinked store book (Kobo
+  // already syncs those with StoryGraph); runs `proceed` right away otherwise.
+  void confirmStoreBook(std::function<void()> proceed);
 
   int iconHeight;
   bool currentPrivate = false; // from the last get/set-user-book response
