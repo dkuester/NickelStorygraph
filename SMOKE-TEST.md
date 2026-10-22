@@ -9,7 +9,10 @@ before continuing.
 ## 0. Prerequisites
 
 - [ ] A device on the firmware line of the build: **4.x** (Kobo) for `QT=5`,
-      **5.18.x** or 6.0 (Kobo/Tolino) for `QT=6`.
+      **5.18.x** or 6.0 (Kobo/Tolino) for `QT=6`. Tested so far: Kobo Clara BW
+      on 4.46 and Tolino on 5.18 — a **Kobo on 5.18+ is untested**; if you
+      have one, note the Kobo/Tolino detection (`includeStore=` in the log of
+      "Sync all books") and the store-book warning.
 - [ ] Built artifacts: `hook/Kobo.tgz` and `mnt/onboard/.adds/NickelStorygraph/`
       (from `just build-package`; run `make clean` in `hook/` first if you
       build outside CI), or the two assets of a release.

@@ -107,6 +107,8 @@ Each release has a download for each firmware line. Check your firmware under **
 
 Download `Kobo.tgz` and `NickelStorygraph-adds.zip` from the [releases page](../../releases).
 
+> **Tested on Tolino only.** The 5.18+ build has been tested on a Tolino; a Kobo on 5.18 or 6.x hasn't been tested on a real device yet. If you run one, feedback in the [issues](../../issues) is very welcome.
+
 1. Connect the device to your computer via USB.
 2. Unzip `NickelStorygraph-adds.zip` and copy the `NickelStorygraph` folder into the `.adds/` folder on the device root, so that you end up with `.adds/NickelStorygraph/`. Do this **first**: if that folder is missing when the plugin starts, it uninstalls itself.
 3. Copy `Kobo.tgz` into the `.kobo/` folder on the device root.
