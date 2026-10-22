@@ -41,6 +41,8 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] Shop books link again: the Tolino shop leaves Nickel's `ISBN` column empty (0 of 362 shop books in a real library), and a missing ISBN aborted auto-link before the title search. The ISBN is now read from the shop's cover URL (`…/9781068563119_A62207078/cover`, 350 of 362 with a valid check digit), with the title search as fallback (found in the Tolino device test)
 - [x] The in-book "Manually link book" entry also uses the bracket-free search text (missed in the first fix)
 - [x] "Sync all books" in the home menu: syncs every book whose progress in `KoboReader.sqlite` moved forward since its last sync — books read in Kobalt or offline (e.g. on a train without Wi-Fi). Previews the titles and asks first. Only linked books by default; with `sync_all_link_new = true` it also links books Nickel shows as currently reading. Sideloaded books always; store books per `sync_all_store_books` (default off on Kobo, which syncs store books natively, on on Tolino)
+- [x] Store-book warning on Kobo: "Sync now", "Enable auto-sync" and "Manually link book" ask before the plugin links an unlinked store book, which Kobo already syncs natively (applies while `sync_all_store_books` is off — the Kobo default; never on Tolino)
+- [x] Journal: "Did not finish" badges showed as "Finished reading" ("finish" matched first); the badge mapping is a tested function now
 - [x] Upstream sync (Oct 2026): private books, paused-audiobook progress, fixed 4-book paging in Currently Reading, wrapped feed titles, the `nickelstoregraph` → `nickelstorygraph` rename (the CLI log is now `nickelstorygraph.log`) and NickelHardcover coexistence, the last adapted to the single Qt 6 `ReadingMenuView` constructor. NickelHardcover itself doesn't support firmware 5.x yet, so that path is untested on device
 - [x] Release workflow: a pushed `v*` tag builds and tests in the toolchain image and publishes the pre-release with `Kobo.tgz` and the `.adds` zip; notes live in `.github/release-notes/<tag>.md`
 - [x] Hook rebuilds when `git describe` changes (version stamp), so a local build never ships a stale version string
@@ -50,15 +52,7 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 
 Low effort, clear value — shippable in a single sitting.
 
-### Warn before linking a store book on Kobo
-On a Kobo, store books already sync with StoryGraph natively. Syncing or
-(manually) linking one through the plugin as well risks double updates, so the
-in-book "Sync now", "Update book status" and "Manually link book" actions
-should first ask "This is a store book Kobo already syncs — link it anyway?".
-
-- **Scope:** store book = content ID without `file://`; reuse
-  `sync_all_store_books` (when it's false, warn). No warning on Tolino.
-- **Effort:** small.
+_None open right now._
 
 ## High priority
 
