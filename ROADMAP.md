@@ -157,9 +157,44 @@ other unsupported formats are handed back to Nickel's reader and sync as usual.
   field. So no Kobalt fork is needed for syncing.
 
 - **Done:** "Sync all books" (home menu) syncs Kobalt-read books from the
-  database on demand.
-- **Left:** run it automatically (on Wi-Fi connect or at the daily-sync hour),
-  and an in-book StoryGraph menu inside Kobalt, which needs an extension point
-  in Kobalt itself — propose it upstream to Kobalt rather than forking.
+  database on demand. Verified in Kobalt's source (Oct 2026): it writes progress
+  into Nickel's database through Nickel's own APIs — `ReadStatus` set to 1 when a
+  book is opened and 2 when finished (`NativeProgress::markReading`/`write`), and
+  percentage, bookmark and `DateLastRead` written on sleep and on close
+  (`Reader::saveNativeProgress`, the close path). So a book opened in Kobalt is
+  picked up by `sync_all_link_new` exactly like one read in Nickel, and no Kobalt
+  fork is needed. Reproduced in the 5.18 Tolino VM (Oct 2026): a book read in
+  Kobalt to 5% and closed landed in `KoboReader.sqlite` as `___PercentRead=5`,
+  `ReadStatus=1`, `DateLastRead` and the bookmark (so the Tolino path updates the
+  percentage too, not only the Kobo one), and `sync-all --dry-run` listed it as
+  `would_link` / `would_sync`.
+- **Left**
+  - Run "Sync all books" automatically (on Wi-Fi connect or at the daily-sync
+    hour) instead of only from the menu. Small.
+  - Show a count on the home-menu entry and offer one-tap sync (the `--dry-run`
+    already lists the candidates).
+  - A NickelMenu entry that syncs the most recently read book, so syncing is
+    reachable while Kobalt is the reader.
+- **Blocked until Kobalt 1.0:** an in-book StoryGraph menu inside Kobalt, which
+  needs an extension point in Kobalt itself — propose it upstream rather than
+  forking. The author has said Kobalt's roadmap is full until 1.0.
+- **Not synced:** highlights and notes made in Kobalt. They live in Kobalt's own
+  storage, not in Nickel's `Bookmark` table, so the journal sync never sees them
+  (documented in the README; see the item below).
 - **Effort:** small for the automatic trigger.
+
+### Import Kobalt's highlights and notes *(optional, after Kobalt 1.0)*
+Highlights and notes made in [Kobalt](https://github.com/nicoverbruggen/kobalt)
+never reach StoryGraph: Kobalt keeps them in its own storage, while the journal
+sync reads only Nickel's `Bookmark` table (`updatejournal.rs`:
+`SELECT Text, Annotation FROM Bookmark WHERE VolumeID = ? AND Hidden = 'false' …`).
+
+- **Scope:** read Kobalt's annotation store (`.adds/kobalt/…`; its format is
+  documented in Kobalt's `doc/storage.md`) and post the entries through the
+  existing `update-journal`, mapped to the content ID.
+- **Blocker:** Kobalt's storage format is still pre-1.0 and gets format bumps;
+  wait until it has settled before coupling the CLI to it. Until then the gap is
+  a documented limitation (README).
+- **Why:** Kobalt users otherwise lose those highlights in StoryGraph.
+- **Effort:** medium, once the format is stable.
 
