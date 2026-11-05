@@ -46,7 +46,7 @@ The Qt 5 build keeps upstream's toolchain (`.forgejo/nickeltc`, NickelTC) and `K
 ### Journal & reviews
 
 - **Reading journal** — View your StoryGraph journal and add new entries with notes
-- **Annotations** — Sync Kobo highlights and notes to your StoryGraph journal, each highlight as its own journal entry
+- **Annotations** — Sync Kobo highlights and notes to your StoryGraph journal, each highlight as its own journal entry (highlights and notes made in the built-in reader; those made in another reader such as Kobalt are not synced — see [Reading in another reader app](#reading-in-another-reader-app-eg-kobalt))
 - **Ratings & reviews** — Rate books (quarter-star), write reviews, tag moods, and answer book property questions; prompted automatically when you finish a book on your Kobo. Enable **Simple review** in Settings to show only the rating and thoughts fields
 
 ### Home screen menu
@@ -190,11 +190,21 @@ Open any book and tap the StoryGraph icon in the reading toolbar at the top of t
 
 ### Home screen menu
 
-A **StoryGraph** button in the home screen's tab bar (alongside Home/Discover/My Books/etc.) opens a menu with Currently Reading, Community Feed, Reading Goals, and Settings, without needing to open a book first. This works the same way whether or not [NickelMenu](https://pgaskin.net/NickelMenu/) is also installed — both mods add their own tab bar button side by side.
+A **StoryGraph** button in the home screen's tab bar (alongside Home/Discover/My Books/etc.) opens a menu with Currently Reading, Community Feed, Reading Goals, **Sync all books**, Check for updates and Settings, without needing to open a book first. This works the same way whether or not [NickelMenu](https://pgaskin.net/NickelMenu/) is also installed — both mods add their own tab bar button side by side.
 
 Disable this entirely with `home_menu = false` in `config.ini`, or hide individual items with `home_menu_reading`, `home_menu_feed`, `home_menu_goals`.
 
 Your current reading streak (current streak, longest streak, and your streak requirement) shows at the bottom of the **Reading Goals** panel if you have one set up on StoryGraph.
+
+### Sync all books
+
+**Sync all books** pushes every book whose reading progress moved forward since its last sync — books read while offline, or in an alternative reader such as [Kobalt](https://github.com/nicoverbruggen/kobalt). It lists the books it will sync and asks before doing so. Sideloaded books are always included; Kobo store books only with `sync_all_store_books = true` (off by default on Kobo, which syncs its store books natively, and on by default on Tolino). Books not linked yet are linked along the way only if Nickel shows them as currently reading; set `sync_all_link_new = true` to link them regardless.
+
+### Reading in another reader app (e.g. Kobalt)
+
+An alternative reader such as [Kobalt](https://github.com/nicoverbruggen/kobalt) saves the reading position into the Kobo's own database, so running **Sync all books** after reading in it pushes the progress to StoryGraph — the plugin does not need the built-in reader for this.
+
+Highlights and notes made in such an app are **not** synced. They are kept in that app's own storage, and the journal sync only reads highlights and notes made in the built-in reader from the Kobo database.
 
 ### How auto-linking works
 
