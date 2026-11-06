@@ -27,6 +27,9 @@ public Q_SLOTS:
   void currentViewIndexChanged(int index);
   void pageChanged();
   void alarm();
+  // Wi-Fi came up: run the automatic batch sync if it's enabled (see
+  // SyncAll::startAuto), rate-limited so a flapping connection can't storm.
+  void wifiConnected();
 
 Q_SIGNALS:
   void currentViewChanged(QString name);
@@ -39,4 +42,5 @@ private:
 
   QString lastViewName;
   int lastSyncDaily = 0;
+  QDateTime lastAutoSyncAt;
 };

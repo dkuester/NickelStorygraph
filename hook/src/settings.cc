@@ -201,6 +201,8 @@ bool Settings::getSyncAllStoreBooks() {
 
 bool Settings::getSyncAllLinkNew() { return config->value("sync_all_link_new", false).toBool(); }
 
+bool Settings::getSyncAllAuto() { return config->value("sync_all_auto", false).toBool(); }
+
 QByteArray Settings::knownBooksJson() {
   QJsonArray books;
   for (QString const &key : internal->childGroups()) {
