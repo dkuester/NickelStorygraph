@@ -80,6 +80,9 @@ public:
   // "Sync all books": whether books that aren't linked yet get linked on the
   // way. Off by default, so the batch only fills in progress for linked books.
   bool getSyncAllLinkNew();
+  // "Sync all books": whether the batch also runs automatically when Wi-Fi
+  // comes up (silently, linked books only). Off by default.
+  bool getSyncAllAuto();
   // Every book with plugin settings, as the JSON list `sync-all` reads on stdin.
   QByteArray knownBooksJson();
 

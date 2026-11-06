@@ -6,14 +6,46 @@
 
 #include "cli.h"
 #include "settings.h"
+#include "syncall.h"
 #include "synccontroller.h"
+
+// Minimum gap between two automatic batch syncs. The trigger is the Wi-Fi
+// connect event, which can fire repeatedly (a flapping link, a reconnect after
+// sleep); this window keeps a burst of them from turning into a sync storm.
+// The manual home-menu entry is unaffected and always available.
+static constexpr qint64 kAutoSyncMinIntervalSeconds = 60 * 60;
 
 SyncController *SyncController::getInstance() {
   static SyncController instance;
   return &instance;
 };
 
-SyncController::SyncController(QObject *parent) : QObject(parent) {};
+SyncController::SyncController(QObject *parent) : QObject(parent) {
+  // Stufe 1: the batch sync can also run automatically when Wi-Fi comes up.
+  // Connected here (not at a book-open hook) so it is active as soon as the
+  // plugin is up, independent of Nickel's reading stack — books read in Kobalt
+  // never touch those hooks.
+  WirelessManager *wm = WirelessManager__sharedInstance();
+  if (wm) {
+    QObject::connect(wm, SIGNAL(networkConnected()), this, SLOT(wifiConnected()));
+  }
+};
+
+void SyncController::wifiConnected() {
+  if (!Settings::getInstance()->getSyncAllAuto())
+    return;
+
+  QDateTime now = QDateTime::currentDateTime();
+  if (lastAutoSyncAt.isValid() && lastAutoSyncAt.secsTo(now) < kAutoSyncMinIntervalSeconds) {
+    nh_log("SyncController::wifiConnected: last auto sync %llds ago, skipping",
+           static_cast<long long>(lastAutoSyncAt.secsTo(now)));
+    return;
+  }
+
+  nh_log("SyncController::wifiConnected: triggering automatic sync-all");
+  lastAutoSyncAt = now;
+  SyncAll::startAuto();
+}
 
 void SyncController::currentViewIndexChanged(int index) {
   if (index < 0)

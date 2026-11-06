@@ -8,10 +8,28 @@
 
 void SyncAll::start() { new SyncAll(); }
 
-SyncAll::SyncAll(QObject *parent) : QObject(parent) {
+// Automatic entry point (Wi-Fi connect). No-op unless the user opted in; the
+// guard against sync storms lives in SyncController::wifiConnected().
+void SyncAll::startAuto() {
+  if (!Settings::getInstance()->getSyncAllAuto())
+    return;
+  new SyncAll(nullptr, true);
+}
+
+SyncAll::SyncAll(QObject *parent, bool autoSync) : QObject(parent), autoSync(autoSync) {
   includeStore = Settings::getInstance()->getSyncAllStoreBooks();
-  linkNew = Settings::getInstance()->getSyncAllLinkNew();
-  nh_log("SyncAll: preview (includeStore=%d linkNew=%d)", includeStore, linkNew);
+  // The automatic path never links new books: the manual flow asks before
+  // linking precisely because it puts books on the shelves, and a background
+  // run must not do that on its own.
+  linkNew = autoSync ? false : Settings::getInstance()->getSyncAllLinkNew();
+  nh_log("SyncAll: start (auto=%d includeStore=%d linkNew=%d)", autoSync, includeStore, linkNew);
+
+  if (autoSync) {
+    // No preview and no confirmation: `sync-all` only touches already-linked
+    // books with forward progress and is a no-op when there is nothing to do.
+    sync();
+    return;
+  }
 
   CLI *cli = CLI::syncAll(includeStore, linkNew, true);
   QObject::connect(cli, &CLI::response, this, &SyncAll::preview);
@@ -70,13 +88,20 @@ void SyncAll::preview(QJsonObject doc) {
 }
 
 void SyncAll::sync() {
-  nh_log("SyncAll: sync");
-  progress = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
-  ConfirmationDialog__showCloseButton(progress, false);
-  ConfirmationDialog__setText(progress, t("Syncing with StoryGraph..."));
-  progress->open();
+  nh_log("SyncAll: sync (auto=%d)", autoSync);
+  if (!autoSync) {
+    progress = ConfirmationDialogFactory__getConfirmationDialog(nullptr);
+    ConfirmationDialog__showCloseButton(progress, false);
+    ConfirmationDialog__setText(progress, t("Syncing with StoryGraph..."));
+    progress->open();
+  }
 
-  CLI *cli = CLI::syncAll(includeStore, linkNew, false);
+  CLI::Options options;
+  // A silent sync does not raise a Wi-Fi icon or an error dialog, and — when
+  // the network isn't up yet — waits for Nickel's own connection instead of
+  // initiating one (see CLI::CLI).
+  options.silent = autoSync;
+  CLI *cli = CLI::syncAll(includeStore, linkNew, false, options);
   QObject::connect(cli, &CLI::response, this, &SyncAll::apply);
   QObject::connect(cli, &CLI::failure, this, [this]() {
     closeProgress();
@@ -128,7 +153,9 @@ void SyncAll::apply(QJsonObject doc) {
     summary += "<br>" + QString(t("Errors: %1")).arg(errors);
 
   closeProgress();
-  ConfirmationDialogFactory__showErrorDialog("StoryGraph", summary);
+  // The automatic path is silent: record the results, show nothing.
+  if (!autoSync)
+    ConfirmationDialogFactory__showErrorDialog("StoryGraph", summary);
   deleteLater();
 }
 

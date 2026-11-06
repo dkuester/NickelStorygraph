@@ -75,6 +75,7 @@ pub struct Config {
   pub sync_daily: u8,
   pub sync_on_close: SyncOnClose,
   pub threshold: u8,
+  pub sync_all_auto: bool,
 }
 
 /// Fallback defaults, used only when `config.ini` must be generated without
@@ -93,6 +94,7 @@ impl Default for Config {
       sync_daily: 0,
       sync_on_close: SyncOnClose::Always,
       threshold: 20,
+      sync_all_auto: false,
     }
   }
 }
@@ -279,6 +281,7 @@ mod tests {
     assert_eq!(d.sync_daily, 0);
     assert!(!d.auto_sync_default);
     assert!(!d.debug);
+    assert!(!d.sync_all_auto);
   }
 
   #[test]
