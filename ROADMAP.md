@@ -168,9 +168,10 @@ other unsupported formats are handed back to Nickel's reader and sync as usual.
   `ReadStatus=1`, `DateLastRead` and the bookmark (so the Tolino path updates the
   percentage too, not only the Kobo one), and `sync-all --dry-run` listed it as
   `would_link` / `would_sync`.
+- **Done (auto-trigger):** with `sync_all_auto = true` the batch also runs
+  silently whenever Wi-Fi comes up (at most once an hour, linked books only) —
+  so Kobalt-read books sync without opening the home menu.
 - **Left**
-  - Run "Sync all books" automatically (on Wi-Fi connect or at the daily-sync
-    hour) instead of only from the menu. Small.
   - Show a count on the home-menu entry and offer one-tap sync (the `--dry-run`
     already lists the candidates).
   - A NickelMenu entry that syncs the most recently read book, so syncing is

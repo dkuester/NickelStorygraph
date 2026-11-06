@@ -200,6 +200,8 @@ Your current reading streak (current streak, longest streak, and your streak req
 
 **Sync all books** pushes every book whose reading progress moved forward since its last sync — books read while offline, or in an alternative reader such as [Kobalt](https://github.com/nicoverbruggen/kobalt). It lists the books it will sync and asks before doing so. Sideloaded books are always included; Kobo store books only with `sync_all_store_books = true` (off by default on Kobo, which syncs its store books natively, and on by default on Tolino). Books not linked yet are linked along the way only if Nickel shows them as currently reading; set `sync_all_link_new = true` to link them regardless.
 
+Set `sync_all_auto = true` to run the same batch automatically whenever the Kobo connects to Wi-Fi, so books read offline or in another reader sync without opening the menu. The automatic run is silent (no confirmation) and never links new books — it only syncs books you already linked — and it fires at most once an hour.
+
 ### Reading in another reader app (e.g. Kobalt)
 
 An alternative reader such as [Kobalt](https://github.com/nicoverbruggen/kobalt) saves the reading position into the Kobo's own database, so running **Sync all books** after reading in it pushes the progress to StoryGraph — the plugin does not need the built-in reader for this.
