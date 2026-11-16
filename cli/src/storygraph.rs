@@ -13,6 +13,7 @@ use std::sync::LazyLock;
 use anyhow::{Context, Result, bail};
 use reqwest::blocking::{Client, Response};
 use reqwest::cookie::{CookieStore, Jar};
+use reqwest::redirect::Policy;
 use reqwest::{Certificate, StatusCode, Url};
 use retry::delay::{Exponential, jitter};
 use retry::retry;
@@ -116,9 +117,10 @@ struct PageData {
 
 // ── Singleton client ──────────────────────────────────────────────────────────
 
-fn build_client(jar: Arc<Jar>) -> Result<Client, reqwest::Error> {
+fn build_client(jar: Arc<Jar>, redirects: Policy) -> Result<Client, reqwest::Error> {
   Client::builder()
     .cookie_provider(jar)
+    .redirect(redirects)
     .user_agent(USER_AGENT)
     .tls_certs_only(
       webpki_root_certs::TLS_SERVER_ROOT_CERTS
@@ -129,7 +131,8 @@ fn build_client(jar: Arc<Jar>) -> Result<Client, reqwest::Error> {
     .build()
 }
 
-static CLIENT: LazyLock<Result<Client, reqwest::Error>> = LazyLock::new(|| {
+/// Cookie jar shared by both clients, pre-seeded with the auth cookies.
+static JAR: LazyLock<Arc<Jar>> = LazyLock::new(|| {
   let base: Url = BASE_URL.parse().expect("BASE_URL is valid");
   let jar = Arc::new(Jar::default());
 
@@ -144,9 +147,22 @@ static CLIENT: LazyLock<Result<Client, reqwest::Error>> = LazyLock::new(|| {
   );
   jar.add_cookie_str("cookies_popup_seen=yes", &base);
   jar.add_cookie_str("plus_popup_seen=yes", &base);
-
-  build_client(jar)
+  jar
 });
+
+static CLIENT: LazyLock<Result<Client, reqwest::Error>> =
+  LazyLock::new(|| build_client(JAR.clone(), Policy::default()));
+
+/// For POSTs: a 302 is the success answer, and following it would only load
+/// the book page, which Cloudflare blocks for this client.
+static POST_CLIENT: LazyLock<Result<Client, reqwest::Error>> =
+  LazyLock::new(|| build_client(JAR.clone(), Policy::none()));
+
+fn post_client() -> Result<&'static Client> {
+  POST_CLIENT
+    .as_ref()
+    .context("Failed to construct HTTP client")
+}
 
 fn client() -> Result<&'static Client> {
   CLIENT.as_ref().context("Failed to construct HTTP client")
@@ -250,7 +266,7 @@ fn post_form_browser(path: &str, fields: &[(String, String)]) -> Result<String> 
   debug_log!("POST {url} (browser)");
 
   let res = retry(Exponential::from_millis(500).map(jitter).take(3), || {
-    client()?
+    post_client()?
       .post(&url)
       .header(
         "Accept",
@@ -264,6 +280,11 @@ fn post_form_browser(path: &str, fields: &[(String, String)]) -> Result<String> 
   })
   .map_err(|e| e.error)?;
 
+  debug_log!(
+    "POST {url} -> {} location {:?}",
+    res.status(),
+    res.headers().get("location")
+  );
   if res.status() == StatusCode::FOUND {
     let location = res
       .headers()
@@ -299,7 +320,7 @@ fn post_form(path: &str, fields: &[(&str, &str)]) -> Result<String> {
     .unwrap_or("");
 
   let res = retry(Exponential::from_millis(500).map(jitter).take(3), || {
-    client()?
+    post_client()?
       .post(&url)
       .header("X-Requested-With", "XMLHttpRequest")
       .header(
@@ -316,6 +337,11 @@ fn post_form(path: &str, fields: &[(&str, &str)]) -> Result<String> {
   .map_err(|e| e.error)?;
 
   // 302 redirect back to the book page is a success for StoryGraph mutations.
+  debug_log!(
+    "POST {url} -> {} location {:?}",
+    res.status(),
+    res.headers().get("location")
+  );
   if res.status() == StatusCode::FOUND {
     let location = res
       .headers()
@@ -2409,7 +2435,8 @@ pub struct LoginResult {
 pub fn login(email: &str, password: &str) -> Result<LoginResult> {
   let base: Url = BASE_URL.parse().expect("BASE_URL is valid");
   let jar = Arc::new(Jar::default());
-  let client = build_client(jar.clone()).context("Failed to build login client")?;
+  let client =
+    build_client(jar.clone(), Policy::default()).context("Failed to build login client")?;
 
   let sign_in_url = format!("{BASE_URL}/users/sign_in");
 
