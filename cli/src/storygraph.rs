@@ -210,7 +210,7 @@ fn check_blocked(res: Response, context: &str) -> Result<Response> {
   if is_cloudflare_challenge(&status, &body) {
     return Err(UserError(
       format!(
-        "StoryGraph blocked the request with a Cloudflare bot check (HTTP 403).<br><br>If syncing stopped working, your cookies have probably expired. {REFRESH_COOKIES_HINT} If they are fresh, wait a few minutes and try again."
+        "StoryGraph's Cloudflare bot check blocked this request (HTTP 403).<br><br>Fresh cookies fix this only if yours have expired: {REFRESH_COOKIES_HINT} If the problem stays with fresh cookies, StoryGraph is blocking the plugin itself on this page; waiting and trying again may help, and the issue tracker has the latest status."
       ),
     )
     .into());
@@ -1183,7 +1183,14 @@ pub fn get_user() -> Result<User> {
     .filter_map(|href| href.strip_prefix("/profile/"))
     .map(str::to_owned)
     .find(|s| !s.is_empty() && !s.contains('/'))
-    .context("Could not find user profile link — session may be expired")?;
+    .ok_or_else(|| {
+      // Without a valid login StoryGraph serves the logged-out landing page
+      // here instead of redirecting to the sign-in page, so check_session
+      // never fires.
+      UserError(format!(
+        "Your StoryGraph login has expired.<br><br>{REFRESH_COOKIES_HINT}"
+      ))
+    })?;
 
   Ok(User {
     username: slug.clone(),
