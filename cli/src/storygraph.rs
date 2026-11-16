@@ -1804,11 +1804,9 @@ pub fn submit_review(
 
   let book_uuid = book_id;
 
-  // Fetch /reviews/new for a CSRF token scoped to the review form.
-  let form_html = get(&format!(
-    "/reviews/new?book_id={book_uuid}&return_to=%2Fbooks%2F{book_uuid}"
-  ))?;
-  let csrf = csrf_token(&form_html).context("Could not find CSRF token on reviews/new page")?;
+  // /reviews/new redirects to the book page, which Cloudflare blocks for this
+  // client, so the session's CSRF token comes from the shelf page instead.
+  let csrf = shelf_csrf()?;
 
   let (stars_int, stars_dec) = match rating {
     Some(r) if r > 0.0 => {
@@ -2132,16 +2130,17 @@ pub fn find_on_shelf(query_title: &str) -> Result<Option<(String, u32)>> {
 pub fn find_current_edition(book_id: &str) -> Result<String> {
   require_credentials()?;
 
-  let editions = list_editions(book_id, 0, "")?;
   let user = get_user()?;
   let shelf_html = get(&format!("/currently-reading/{}", user.slug))?;
 
-  // Check the stored book_id first — it may already be the right one.
+  // Check the stored book_id first — it may already be the right one. This
+  // needs no edition list, which Cloudflare blocks for this client.
   if shelf_html.contains(book_id) {
     return Ok(book_id.to_owned());
   }
 
   // Check each edition UUID against the shelf HTML.
+  let editions = list_editions(book_id, 0, "")?;
   for edition in &editions {
     if shelf_html.contains(&edition.book_id) {
       return Ok(edition.book_id.clone());
@@ -2192,43 +2191,16 @@ pub fn prefer_digital_edition(book_id: &str) -> Result<String> {
 /// transfers reading progress to the new edition.
 pub fn switch_edition(from_id: &str, to_id: &str) -> Result<bool> {
   require_credentials()?;
-  let html = get(&format!("/books/{from_id}/editions"))?;
-  let doc = Html::parse_document(&html);
-  let csrf = csrf_token(&html).context("Could not find CSRF token on editions page")?;
-
-  // Find the switch form for the target edition.
-  let form_sel = Selector::parse("form[action='/switch-editions']").expect("valid selector");
-  let input_sel = Selector::parse("input").expect("valid selector");
-
-  let mut form_csrf = csrf.clone();
-  let mut true_from_id = from_id.to_owned();
-
-  for form in doc.select(&form_sel) {
-    let inputs: std::collections::HashMap<String, String> = form
-      .select(&input_sel)
-      .filter_map(|el| {
-        let name = el.value().attr("name")?.to_owned();
-        let value = el.value().attr("value").unwrap_or("").to_owned();
-        Some((name, value))
-      })
-      .collect();
-
-    if inputs.get("to_book_id").map(String::as_str) == Some(to_id) {
-      if let Some(v) = inputs.get("authenticity_token") {
-        form_csrf = v.clone();
-      }
-      if let Some(v) = inputs.get("from_book_id") {
-        true_from_id = v.clone();
-      }
-      break;
-    }
-  }
+  // The switch form on /books/:id/editions only repeats the two ids and a
+  // CSRF token, and that page is blocked by Cloudflare for this client: the
+  // token comes from the shelf page.
+  let csrf = shelf_csrf()?;
 
   post_form(
     "/switch-editions",
     &[
-      ("authenticity_token", &form_csrf),
-      ("from_book_id", &true_from_id),
+      ("authenticity_token", &csrf),
+      ("from_book_id", from_id),
       ("to_book_id", to_id),
       ("button", ""),
     ],
