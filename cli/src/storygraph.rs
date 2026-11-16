@@ -605,15 +605,76 @@ fn shelf_csrf() -> Result<String> {
   csrf_token(&html).context("Could not find CSRF token on the shelf page")
 }
 
-/// Book state for a mutating call: the shelf first, the book page as the
-/// fallback (books that are not being read).
-fn fetch_book_state(book_id: &str) -> Result<(UserBook, PageData)> {
+/// What a `/browse` result says about a book the user may not be reading: the
+/// status label StoryGraph shows on the pane (`None`: on no shelf) and the
+/// edition's page count. Search is not blocked, so this stands in for the
+/// book page when it is.
+struct SearchState {
+  status_id: Option<u8>,
+  pages: u32,
+}
+
+fn search_state_from_html(book_id: &str, html: &str) -> Option<SearchState> {
+  let pages = parse_search_results(html)
+    .into_iter()
+    .find(|b| b.book_id == book_id)?
+    .pages;
+
+  let doc = Html::parse_document(html);
+  let pane_sel = Selector::parse(".book-pane").expect("valid selector");
+  let label_sel = Selector::parse("button.read-status-label").expect("valid selector");
+  let pane = doc
+    .select(&pane_sel)
+    .find(|p| p.value().attr("data-book-id") == Some(book_id))?;
+  let status_id = pane
+    .select(&label_sel)
+    .next()
+    .and_then(|label| parse_status_text(&label.text().collect::<String>()));
+  Some(SearchState { status_id, pages })
+}
+
+fn search_state(query: &str, book_id: &str) -> Result<Option<SearchState>> {
+  let html = get(&format!(
+    "/browse?search_term={}",
+    urlencoding::encode(query)
+  ))?;
+  Ok(search_state_from_html(book_id, &html))
+}
+
+/// Book state for a mutating call: the shelf first, then the book page, then
+/// (when the caller knows the title) the search results, which show the
+/// status of books that are on no shelf. Without any of them the book page's
+/// error is returned: the status is unknown, and guessing could turn a read
+/// book into a currently-reading one.
+fn fetch_book_state(book_id: &str, hint: Option<&str>) -> Result<(UserBook, PageData)> {
   if let Some(state) = shelf_book_state(book_id)? {
     return Ok(state);
   }
   debug_log!("{book_id} is not on the shelf, falling back to /books/{book_id}");
-  let (html, data) = fetch_page_data(book_id)?;
-  Ok((parse_user_book(book_id, &html)?, data))
+  let page_error = match fetch_page_data(book_id) {
+    Ok((html, data)) => return Ok((parse_user_book(book_id, &html)?, data)),
+    Err(e) => e,
+  };
+
+  if let Some(query) = hint
+    && let Some(found) = search_state(query, book_id)?
+  {
+    debug_log!(
+      "{book_id}: status {:?} from the search results",
+      found.status_id
+    );
+    let mut book = empty_user_book(book_id);
+    book.status_id = found.status_id;
+    book.book_pages = found.pages;
+    let data = PageData {
+      csrf: shelf_csrf()?,
+      book_pages: found.pages.to_string(),
+      last_pages: String::new(),
+      last_percent: String::new(),
+    };
+    return Ok((book, data));
+  }
+  Err(page_error)
 }
 
 /// The book's state after a write. A book that just left the shelf (finished,
@@ -1639,17 +1700,22 @@ pub fn set_privacy(book_id: &str, private: bool) -> Result<UserBook> {
 /// Updates reading progress for a book. `progress_type` is `"percentage"` or `"pages"`.
 /// Fetches the book page first to extract the CSRF token and current page count.
 /// If the book has no reading status, automatically sets it to "Currently Reading" first.
-pub fn update_progress(book_id: &str, progress_type: &str, value: u32) -> Result<UserBook> {
+pub fn update_progress(
+  book_id: &str,
+  progress_type: &str,
+  value: u32,
+  hint: Option<&str>,
+) -> Result<UserBook> {
   require_credentials()?;
-  let (book, mut data) = fetch_book_state(book_id)?;
+  let (book, mut data) = fetch_book_state(book_id, hint)?;
 
   let current_status = book.status_id;
   if current_status.is_none() {
     update_status(book_id, ReadingStatus::CurrentlyReading as u8)?;
-    data = fetch_book_state(book_id)?.1;
+    data = fetch_book_state(book_id, hint)?.1;
   } else if current_status == Some(ReadingStatus::Read as u8) {
     update_status(book_id, ReadingStatus::Rereading as u8)?;
-    data = fetch_book_state(book_id)?.1;
+    data = fetch_book_state(book_id, hint)?.1;
   }
 
   let value_str = value.to_string();
@@ -1679,7 +1745,7 @@ pub fn update_progress(book_id: &str, progress_type: &str, value: u32) -> Result
 /// StoryGraph records this as a progress update with an attached note in the reading journal.
 pub fn insert_journal(book_id: &str, note: &str, progress: u32, progress_type: &str) -> Result<()> {
   require_credentials()?;
-  let (_, data) = fetch_book_state(book_id)?;
+  let (_, data) = fetch_book_state(book_id, None)?;
   let progress_str = progress.to_string();
 
   let now = chrono::Local::now();
@@ -2842,6 +2908,60 @@ mod tests {
       book_state_from_shelf_html("dddddddd-dddd-dddd-dddd-dddddddddddd", SHELF_STATE_FIXTURE)
         .is_none()
     );
+  }
+
+  // A book with a status shows it in `button.read-status-label`; one on no
+  // shelf has only the "to read" action button.
+  fn search_pane(id: &str, pages: u32, label: &str) -> String {
+    format!(
+      r#"<div class="book-pane" data-book-id={id}>
+  <div class="book-title-author-and-series">
+    <h3 class="font-bold text-xl"><a href="/books/{id}">Title {id}</a></h3>
+    <p><a href="/authors/a1">Author</a></p>
+  </div>
+  <p><span class="toggle-edition-info-link">{pages} pages • digital • 2001</span></p>
+  {label}
+</div>"#
+    )
+  }
+
+  #[test]
+  fn search_state_reads_status_label_and_pages() {
+    let html = format!(
+      "{}{}{}",
+      search_pane(
+        "read-book",
+        300,
+        r#"<button class="read-status-label text-cyan-700">read</button>"#
+      ),
+      search_pane(
+        "new-book",
+        200,
+        r#"<button class="btn-dropdown read-status-button rounded-l-sm">to read</button>"#
+      ),
+      search_pane(
+        "reading-book",
+        100,
+        r#"<button class="read-status-label">currently reading</button>"#
+      ),
+    );
+
+    let read = search_state_from_html("read-book", &html).expect("pane found");
+    assert_eq!(read.status_id, Some(ReadingStatus::Read as u8));
+    assert_eq!(read.pages, 300);
+
+    // No label: the book is on no shelf, so a new reading status is safe.
+    let new = search_state_from_html("new-book", &html).expect("pane found");
+    assert_eq!(new.status_id, None);
+    assert_eq!(new.pages, 200);
+
+    let reading = search_state_from_html("reading-book", &html).expect("pane found");
+    assert_eq!(
+      reading.status_id,
+      Some(ReadingStatus::CurrentlyReading as u8)
+    );
+
+    assert!(search_state_from_html("other-book", &html).is_none());
   }
 
   const EDITIONS_FIXTURE: &str = r#"
