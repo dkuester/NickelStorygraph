@@ -47,6 +47,7 @@ priority** (highest value, worth the effort), and **low priority (optional)**
 - [x] Release workflow: a pushed `v*` tag builds and tests in the toolchain image and publishes the pre-release with `Kobo.tgz` and the `.adds` zip; notes live in `.github/release-notes/<tag>.md`
 - [x] Hook rebuilds when `git describe` changes (version stamp), so a local build never ships a stale version string
 - [x] `SMOKE-TEST.md` covers the Tolino: `.kobo/version` format, `.txt`→EPUB conversion, shop-book ISBNs, log locations, USB hang
+- [x] Cloudflare block on StoryGraph's book pages (v0.7.0): book state, new-book status, review and edition switch work from pages that still load; see "Cloudflare bot check" below
 
 ## Quick wins
 
@@ -57,6 +58,46 @@ _None open right now._
 ## High priority
 
 Higher effort, highest value — the product's health and the most painful UX.
+
+### Cloudflare bot check on StoryGraph *(ongoing risk)*
+Since mid-November 2026 StoryGraph's Cloudflare bot check answers some pages
+with a challenge (HTTP 403, `cf-mitigated: challenge`) for the plugin's CLI,
+even with a valid session. Other KOReader StoryGraph plugins hit the same
+wall, so it is not specific to this one. v0.7.0 works around it; it can break
+again whenever Cloudflare's rules change.
+
+Checked on 2026-11-16 with a real session:
+- **Blocked:** `/books/:id`, `/books/:id/editions`, `/reviews/new` (redirects
+  to the book page), `/books-read/:slug`.
+- **Still loads:** `/`, `/currently-reading/:slug`, `/to-read/:slug`,
+  `/browse` (search), `/journal`, `/community`, `/streak/:slug`,
+  `/reading_challenges/dashboard/:slug`, and the POST endpoints.
+
+How the workaround works (`cli/src/storygraph.rs`):
+- A book on the currently-reading or paused shelf: the shelf page carries its
+  `read_status[...]` inputs and the session's CSRF meta tag (`shelf_book_state`).
+- A book on no shelf: status and page count come from its search result pane
+  (`search_state`), which needs the title as a hint; without it the call fails
+  rather than guess, so a read book is never demoted.
+- Review and edition switch only need the CSRF token, taken from the shelf.
+- POSTs don't follow redirects: `switch-editions` and `/reviews` answer 302 to
+  the blocked book page, and the 302 is the success answer.
+
+Still broken:
+- Privacy toggle (`set_privacy`) reads the book page.
+- The edition picker list (`list-editions`) has no other source.
+- `get-user-book` and `insert-journal` for a book on no shelf only get status
+  and page count, not exact progress.
+
+Policy: the plugin doesn't try to get past the bot check (spoofed browser
+fingerprints, headless browsers). It uses pages StoryGraph serves to a plain
+client, and the error message tells users what happened. StoryGraph has
+announced a public API without a date; nothing here depends on it.
+
+To see what is blocked after a new report, run the CLI commands against a real
+session (`get-user-book`, `list-editions`, `search`, `list-reading`) and look
+for the Cloudflare message; with `debug=true` in `config.ini` the log shows
+each request and the POST status.
 
 ### On-device OTA update
 Update the plugin directly on the device. The install is split across two
