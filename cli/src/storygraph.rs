@@ -2089,7 +2089,15 @@ pub fn find_current_edition(book_id: &str) -> Result<String> {
 /// of the same work. Falls back to the original book_id if no digital edition is found.
 pub fn prefer_digital_edition(book_id: &str) -> Result<String> {
   require_credentials()?;
-  let html = get(&format!("/books/{book_id}"))?;
+  // The digital preference is a nicety. With /books/:id and its editions page
+  // blocked by Cloudflare, linking the search result as it is beats failing.
+  let html = match get(&format!("/books/{book_id}")) {
+    Ok(html) => html,
+    Err(e) => {
+      debug_log!("prefer_digital_edition: keeping {book_id}, book page unavailable: {e:#}");
+      return Ok(book_id.to_owned());
+    }
+  };
   let user_book = parse_user_book(book_id, &html)?;
 
   let fmt = user_book.edition_format.to_lowercase();
@@ -2097,7 +2105,13 @@ pub fn prefer_digital_edition(book_id: &str) -> Result<String> {
     return Ok(book_id.to_owned());
   }
 
-  let editions = list_editions(book_id, 0, "")?;
+  let editions = match list_editions(book_id, 0, "") {
+    Ok(editions) => editions,
+    Err(e) => {
+      debug_log!("prefer_digital_edition: keeping {book_id}, editions unavailable: {e:#}");
+      return Ok(book_id.to_owned());
+    }
+  };
   Ok(
     editions
       .into_iter()
