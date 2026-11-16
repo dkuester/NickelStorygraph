@@ -223,7 +223,8 @@ fn sync_one(c: &Candidate) -> Result<Outcome> {
       }
     };
     outcome.book_id = Some(book_id.clone());
-    let user_book = storygraph::update_progress(&book_id, "percentage", c.progress)?;
+    let hint = crate::utils::strip_bracketed(&c.title);
+    let user_book = storygraph::update_progress(&book_id, "percentage", c.progress, Some(&hint))?;
     outcome.status_id = user_book.status_id;
     Ok(())
   })();

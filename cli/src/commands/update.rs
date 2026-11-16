@@ -56,7 +56,11 @@ pub fn run(args: Update) -> Result<()> {
     }
   };
 
-  let user_book = storygraph::update_progress(&book_id, "percentage", args.value)?;
+  // The title lets update_progress read the book's status from the search
+  // results when StoryGraph's book page is unavailable.
+  let hint = book_title_query(content_id.as_deref())
+    .map(|(title, author)| format!("{} {author}", strip_bracketed(&title)));
+  let user_book = storygraph::update_progress(&book_id, "percentage", args.value, hint.as_deref())?;
   let mut resp = serde_json::to_value(&user_book)?;
   resp["resolved_book_id"] = json!(book_id);
   emit_json!("{}", resp);
