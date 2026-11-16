@@ -556,6 +556,82 @@ fn fetch_page_data(book_id: &str) -> Result<(String, PageData)> {
   ))
 }
 
+/// Reads a book's state from the user's currently-reading shelf instead of
+/// `/books/:id`. Since 2026-11 StoryGraph's Cloudflare bot check answers the
+/// book page with HTTP 403 for this client, while the shelf still loads and
+/// its panes carry the same hidden `read_status[...]` inputs. Only books on the
+/// currently-reading or paused shelf are found; `None` for any other book.
+fn shelf_book_state(book_id: &str) -> Result<Option<(UserBook, PageData)>> {
+  let user = get_user()?;
+  let html = get(&format!("/currently-reading/{}", user.slug))?;
+  Ok(book_state_from_shelf_html(book_id, &html))
+}
+
+fn book_state_from_shelf_html(book_id: &str, html: &str) -> Option<(UserBook, PageData)> {
+  let doc = Html::parse_document(html);
+  let pane_sel = Selector::parse(".book-pane").expect("valid selector");
+  let pane = doc
+    .select(&pane_sel)
+    .find(|p| p.value().attr("data-book-id") == Some(book_id))?;
+
+  let paused = pane
+    .ancestors()
+    .filter_map(scraper::ElementRef::wrap)
+    .any(|a| a.value().classes().any(|c| c == "paused-books-panes"));
+  let status = if paused {
+    ReadingStatus::Paused
+  } else {
+    ReadingStatus::CurrentlyReading
+  };
+
+  let pane_html = pane.html();
+  let mut book = parse_user_book(book_id, &pane_html).ok()?;
+  book.status_id = Some(status as u8);
+
+  let data = PageData {
+    csrf: csrf_token(html)?,
+    book_pages: hidden_value(&pane_html, "read_status[book_num_of_pages]"),
+    last_pages: hidden_value(&pane_html, "read_status[last_reached_pages]"),
+    last_percent: hidden_value(&pane_html, "read_status[last_reached_percent]"),
+  };
+  Some((book, data))
+}
+
+/// The CSRF token is a per-session meta tag on every page; the shelf is the
+/// page that still loads.
+fn shelf_csrf() -> Result<String> {
+  let user = get_user()?;
+  let html = get(&format!("/currently-reading/{}", user.slug))?;
+  csrf_token(&html).context("Could not find CSRF token on the shelf page")
+}
+
+/// Book state for a mutating call: the shelf first, the book page as the
+/// fallback (books that are not being read).
+fn fetch_book_state(book_id: &str) -> Result<(UserBook, PageData)> {
+  if let Some(state) = shelf_book_state(book_id)? {
+    return Ok(state);
+  }
+  debug_log!("{book_id} is not on the shelf, falling back to /books/{book_id}");
+  let (html, data) = fetch_page_data(book_id)?;
+  Ok((parse_user_book(book_id, &html)?, data))
+}
+
+/// The book's state after a write. A book that just left the shelf (finished,
+/// DNF) is only on the book page; when that is blocked the write itself already
+/// succeeded, so the expected state is returned rather than an error.
+fn refreshed_user_book(book_id: &str, expected: UserBook) -> UserBook {
+  let fresh = shelf_book_state(book_id)
+    .map(|state| state.map(|(book, _)| book))
+    .and_then(|found| match found {
+      Some(book) => Ok(book),
+      None => get(&format!("/books/{book_id}")).and_then(|html| parse_user_book(book_id, &html)),
+    });
+  fresh.unwrap_or_else(|e| {
+    debug_log!("could not re-read {book_id} after the update: {e:#}");
+    expected
+  })
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// A single reading goal (books, pages, or hours) from the challenges dashboard.
@@ -1423,6 +1499,9 @@ pub fn find_by_isbn(isbn: &str) -> Result<Option<Book>> {
 /// (common for Kindle/digital editions).
 pub fn get_user_book(book_id: &str) -> Result<UserBook> {
   require_credentials()?;
+  if let Some((book, _)) = shelf_book_state(book_id)? {
+    return Ok(book);
+  }
   let html = get(&format!("/books/{book_id}"))?;
   parse_user_book(book_id, &html)
 }
@@ -1495,14 +1574,33 @@ fn parse_user_book(book_id: &str, html: &str) -> Result<UserBook> {
 /// The book's privacy is left as it is (see `set_privacy`).
 pub fn update_status(book_id: &str, status_id: u8) -> Result<UserBook> {
   require_credentials()?;
-  let (_html, data) = fetch_page_data(book_id)?;
+  // Only the CSRF token is needed, so a book that is not on the shelf yet
+  // (the usual case when starting one) doesn't need its book page.
+  let (before, csrf) = match shelf_book_state(book_id)? {
+    Some((book, data)) => (Some(book), data.csrf),
+    None => (None, shelf_csrf()?),
+  };
   let status_str = status_to_str(status_id);
 
   let path = format!("/update-status.js?book_id={book_id}&status={status_str}");
-  post_form(&path, &[("authenticity_token", data.csrf.as_str())])?;
+  post_form(&path, &[("authenticity_token", csrf.as_str())])?;
 
-  // Re-fetch to return current state.
-  parse_user_book(book_id, &get(&format!("/books/{book_id}"))?)
+  let mut expected = before.unwrap_or_else(|| empty_user_book(book_id));
+  expected.status_id = Some(status_id);
+  Ok(refreshed_user_book(book_id, expected))
+}
+
+fn empty_user_book(book_id: &str) -> UserBook {
+  UserBook {
+    book_id: book_id.to_owned(),
+    status_id: None,
+    is_private: false,
+    progress_percent: 0,
+    progress_pages: 0,
+    book_pages: 0,
+    progress_type: "percentage".to_owned(),
+    edition_format: String::new(),
+  }
 }
 
 /// Makes a book private or public by submitting the book page's privacy toggle
@@ -1543,17 +1641,15 @@ pub fn set_privacy(book_id: &str, private: bool) -> Result<UserBook> {
 /// If the book has no reading status, automatically sets it to "Currently Reading" first.
 pub fn update_progress(book_id: &str, progress_type: &str, value: u32) -> Result<UserBook> {
   require_credentials()?;
-  let (html, mut data) = fetch_page_data(book_id)?;
+  let (book, mut data) = fetch_book_state(book_id)?;
 
-  let current_status = parse_user_book(book_id, &html)?.status_id;
+  let current_status = book.status_id;
   if current_status.is_none() {
     update_status(book_id, ReadingStatus::CurrentlyReading as u8)?;
-    let (_, fresh) = fetch_page_data(book_id)?;
-    data = fresh;
+    data = fetch_book_state(book_id)?.1;
   } else if current_status == Some(ReadingStatus::Read as u8) {
     update_status(book_id, ReadingStatus::Rereading as u8)?;
-    let (_, fresh) = fetch_page_data(book_id)?;
-    data = fresh;
+    data = fetch_book_state(book_id)?.1;
   }
 
   let value_str = value.to_string();
@@ -1570,14 +1666,20 @@ pub fn update_progress(book_id: &str, progress_type: &str, value: u32) -> Result
     ],
   )?;
 
-  parse_user_book(book_id, &get(&format!("/books/{book_id}"))?)
+  let mut expected = book;
+  if progress_type == "pages" {
+    expected.progress_pages = value;
+  } else {
+    expected.progress_percent = value;
+  }
+  Ok(refreshed_user_book(book_id, expected))
 }
 
 /// Creates a reading journal entry (note + progress snapshot) via `/update-progress-with-note`.
 /// StoryGraph records this as a progress update with an attached note in the reading journal.
 pub fn insert_journal(book_id: &str, note: &str, progress: u32, progress_type: &str) -> Result<()> {
   require_credentials()?;
-  let (_html, data) = fetch_page_data(book_id)?;
+  let (_, data) = fetch_book_state(book_id)?;
   let progress_str = progress.to_string();
 
   let now = chrono::Local::now();
@@ -2674,6 +2776,58 @@ mod tests {
     assert_eq!(b.format, "hardcover");
     assert_eq!(b.year, 2016);
     assert_eq!(b.status, "paused");
+  }
+
+  const SHELF_STATE_FIXTURE: &str = r#"
+<html><head><meta name="csrf-token" content="fixture-token" /></head><body>
+<div class="read-books">
+  <div class="book-pane" data-book-id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa">
+    <input value="453" class="read-status-book-num-of-pages" type="hidden" name="read_status[book_num_of_pages]" />
+    <input value="258" class="read-status-last-reached-pages" type="hidden" name="read_status[last_reached_pages]" />
+    <input value="57" class="read-status-last-reached-percent" type="hidden" name="read_status[last_reached_percent]" />
+  </div>
+</div>
+<div class="paused-books-panes">
+  <div class="book-pane" data-book-id="cccccccc-cccc-cccc-cccc-cccccccccccc">
+    <input value="672" type="hidden" name="read_status[book_num_of_pages]" />
+    <input value="517" type="hidden" name="read_status[last_reached_pages]" />
+    <input value="77" type="hidden" name="read_status[last_reached_percent]" />
+  </div>
+</div>
+</body></html>
+"#;
+
+  #[test]
+  fn book_state_from_shelf_reads_token_and_progress_inputs() {
+    let (book, data) =
+      book_state_from_shelf_html("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", SHELF_STATE_FIXTURE)
+        .expect("book is on the shelf");
+    assert_eq!(data.csrf, "fixture-token");
+    assert_eq!(data.book_pages, "453");
+    assert_eq!(data.last_pages, "258");
+    assert_eq!(data.last_percent, "57");
+    assert_eq!(book.status_id, Some(ReadingStatus::CurrentlyReading as u8));
+    assert_eq!(book.progress_percent, 57);
+    assert_eq!(book.progress_pages, 258);
+    assert_eq!(book.book_pages, 453);
+  }
+
+  #[test]
+  fn book_state_from_shelf_marks_paused_books() {
+    let (book, data) =
+      book_state_from_shelf_html("cccccccc-cccc-cccc-cccc-cccccccccccc", SHELF_STATE_FIXTURE)
+        .expect("book is on the shelf");
+    assert_eq!(book.status_id, Some(ReadingStatus::Paused as u8));
+    assert_eq!(book.progress_percent, 77);
+    assert_eq!(data.book_pages, "672");
+  }
+
+  #[test]
+  fn book_state_from_shelf_ignores_books_that_are_not_on_it() {
+    assert!(
+      book_state_from_shelf_html("dddddddd-dddd-dddd-dddd-dddddddddddd", SHELF_STATE_FIXTURE)
+        .is_none()
+    );
   }
 
   const EDITIONS_FIXTURE: &str = r#"
