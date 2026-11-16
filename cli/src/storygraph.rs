@@ -1694,6 +1694,21 @@ fn empty_user_book(book_id: &str) -> UserBook {
 /// form (`/toggle-book-privacy.js`). No-op if it's already in the wanted state.
 pub fn set_privacy(book_id: &str, private: bool) -> Result<UserBook> {
   require_credentials()?;
+
+  // A book on the shelf carries the same toggle button as its page, without
+  // the form: the endpoint is the default path below and the CSRF token is the
+  // shelf's.
+  if let Some((book, data)) = shelf_book_state(book_id)? {
+    if book.is_private == private {
+      return Ok(book);
+    }
+    let path = format!("/toggle-book-privacy.js?book_id={book_id}&private={private}");
+    post_form(&path, &[("authenticity_token", data.csrf.as_str())])?;
+    let mut expected = book;
+    expected.is_private = private;
+    return Ok(refreshed_user_book(book_id, expected));
+  }
+
   let html = get(&format!("/books/{book_id}"))?;
   let Some(toggle) = privacy_toggle(&Html::parse_document(&html)) else {
     return Err(
@@ -2981,6 +2996,26 @@ mod tests {
     );
 
     assert!(search_state_from_html("other-book", &html).is_none());
+  }
+
+  #[test]
+  fn book_state_from_shelf_reads_the_privacy_toggle() {
+    let pane = |id: &str, title: &str| {
+      format!(
+        r#"<html><head><meta name="csrf-token" content="t" /></head><body><div class="read-books">
+<div class="book-pane" data-book-id="{id}">
+  <button class="js-book-private-toggle w-full" title="{title}">toggle</button>
+</div></div></body></html>"#
+      )
+    };
+
+    let public = pane("a", "Make this book private");
+    let (book, _) = book_state_from_shelf_html("a", &public).expect("on the shelf");
+    assert!(!book.is_private);
+
+    let private = pane("a", "Make this book public");
+    let (book, _) = book_state_from_shelf_html("a", &private).expect("on the shelf");
+    assert!(book.is_private);
   }
 
   const EDITIONS_FIXTURE: &str = r#"
