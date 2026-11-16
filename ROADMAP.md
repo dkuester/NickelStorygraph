@@ -79,13 +79,16 @@ How the workaround works (`cli/src/storygraph.rs`):
 - A book on no shelf: status and page count come from its search result pane
   (`search_state`), which needs the title as a hint; without it the call fails
   rather than guess, so a read book is never demoted.
-- Review and edition switch only need the CSRF token, taken from the shelf.
+- Review, edition switch and the privacy toggle only need the CSRF token (and, for privacy, the
+  toggle button in the shelf pane), taken from the shelf.
 - POSTs don't follow redirects: `switch-editions` and `/reviews` answer 302 to
   the blocked book page, and the 302 is the success answer.
 
 Still broken:
-- Privacy toggle (`set_privacy`) reads the book page.
-- The edition picker list (`list-editions`) has no other source.
+- The edition picker list (`list-editions`) has no other source: search shows
+  one edition per work, and the editions page is blocked.
+- The privacy toggle only works for books on the currently-reading or paused
+  shelf (the button is in the shelf pane); other books still need the book page.
 - `get-user-book` and `insert-journal` for a book on no shelf only get status
   and page count, not exact progress.
 
